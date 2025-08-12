@@ -12,6 +12,9 @@ struct Arguments {
 
     #[arg(long, short)]
     user_idx: String,
+
+    #[arg(long)]
+    path: Option<String>
 }
 
 #[derive(Debug)]
@@ -196,9 +199,19 @@ fn decrypt_with_progress(book_info: &BookInfo, device_id: &str) -> miette::Resul
 fn main() -> miette::Result<()> {
     let arguments = Arguments::parse();
     verify(&arguments)?;
-    let _ = book_infos(&library_path(&arguments.user_idx)?)?
+
+    let root_path = if let Some(path) = &arguments.path {
+        std::path::PathBuf::from(path)
+    } else {
+        library_path(&arguments.user_idx)?
+    };
+
+    println!("📁 Using path: {:?}", root_path);
+
+    let _ = book_infos(&root_path)?
         .iter()
         .map(|book_info| decrypt_with_progress(&book_info, &arguments.device_id))
         .collect::<Vec<_>>();
+
     Ok(())
 }
