@@ -1,11 +1,32 @@
 [package]
-edition = "2021"
 name = "ridiculous"
-version = "0.1.0"
+version = "0.2.0"
+edition = "2021"
+authors = ["Your Name <your.email@example.com>"]
+description = "Enhanced RIDI Books DRM removal tool with GUI and smart detection"
+license = "MIT"
+
+[[bin]]
+name = "ridiculous"
+path = "src/main.rs"
 
 [dependencies]
-aes = "0.8.4"
-cbc = { version = "0.1.2", features = ["alloc"] }
-clap = { version = "4.5.2", features = ["derive"] }
-indicatif = "0.17.8"
-miette = { version = "7.1.0", features = ["fancy"] }
+# Original dependencies (keep these from your current Cargo.toml)
+clap = { version = "4.0", features = ["derive"] }
+
+# New dependencies for enhanced functionality
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8"
+indicatif = "0.17"
+miette = { version = "5.0", features = ["fancy"] }
+dirs = "5.0"  # For cross-platform directory detection
+console = "0.15"  # For better terminal colors/formatting
+uuid = { version = "1.0", features = ["v4"] }
+thiserror = "1.0"  # For better error handling
+
+# Required for directory scanning and error handling
+anyhow = "1.0"
+walkdir = "2.0"
+
+[dev-dependencies]
+tempfile = "3.0"  # For testing
