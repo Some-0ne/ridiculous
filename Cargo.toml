@@ -2,7 +2,7 @@
 name = "ridiculous"
 version = "0.3.0"
 edition = "2021"
-authors = ["Your Name <your.email@example.com>"]
+authors = ["Floorswww"]
 description = "Enhanced RIDI book decryption tool with batch processing and GUI support"
 license = "MIT"
 repository = "https://github.com/Some-0ne/ridiculous"
