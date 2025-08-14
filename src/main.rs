@@ -1,4 +1,3 @@
-use aes::cipher::BlockDecryptMut;
 use aes::cipher::KeyIvInit;
 use anyhow::{Context, Result};
 use clap::Parser;
@@ -6,7 +5,7 @@ use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use miette::{IntoDiagnostic, miette};
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Semaphore;
 
@@ -102,7 +101,7 @@ async fn main() -> miette::Result<()> {
     
     if args.validate_only {
         let config = load_or_create_config(&args)?;
-        return validate_credentials(&config).await;
+        return validate_credentials(&config).await.map_err(|e| miette::miette!("{}", e));
     }
     
     // Load or create config
@@ -271,7 +270,7 @@ async fn process_books_interactive(
             }
         }
         
-        save_processing_state(state)?;
+        save_processing_state(state).map_err(|e| miette::miette!("{}", e))?;
     }
     
     Ok(())
@@ -291,8 +290,8 @@ async fn process_single_book(
         match decrypt_book_with_original_logic(book, &config.device_id, pb).await {
             Ok(_) => return Ok(()),
             Err(e) if retries > 1 && is_retryable_error(&e) => {
-                pb.set_message(&format!("Retrying... ({} attempts left)", retries - 1));
-                retries -= 1;
+                let message = format!("Retrying... ({} attempts left)", retries - 1);
+                pb.set_message(&message);
                 tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
             }
             Err(e) => return Err(e),
@@ -360,8 +359,8 @@ fn decrypt_key(book_info: &BookInfo, device_id: &str) -> Result<[u8; 16]> {
     let mut iv = [0; 16];
     iv.copy_from_slice(&data_file[0..16]);
 
-    let plaintext = cbc::Decryptor::<aes::Aes128>::new(&key.into(), &iv.into())
-        .decrypt_padded_vec_mut::<aes::cipher::block_padding::Pkcs7>(&data_file[16..])
+    let plaintext = cbc::Decryptor::<aes::Aecs7.decrypt_padded_mut::<aes::cipher::block_padding::Pkcs7>s128>::new(&key.into(), &iv.into())
+        (&data_file[16..])
         .map_err(|error| anyhow::anyhow!("Decryption failed: {}", error))?;
 
     let plaintext_str = std::str::from_utf8(&plaintext)
@@ -394,7 +393,7 @@ fn decrypt_book_content(book_info: &BookInfo, key: &[u8; 16]) -> Result<Vec<u8>>
     iv.copy_from_slice(&book_file[0..16]);
 
     let decrypted = cbc::Decryptor::<aes::Aes128>::new(key.into(), &iv.into())
-        .decrypt_padded_vec_mut::<aes::cipher::block_padding::Pkcs7>(&book_file[16..])
+        .decrypt_padded_mut::<aes::cipher::block_padding::Pkcs7>(&book_file[16..])
         .map_err(|error| anyhow::anyhow!("Book decryption failed: {}", error))?;
 
     Ok(decrypted)
