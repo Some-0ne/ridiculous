@@ -1,6 +1,6 @@
-use miette::{IntoDiagnostic, miette};
+use miette::IntoDiagnostic;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use crate::types::*;
 
@@ -69,25 +69,32 @@ impl LibraryFinder {
                 continue;
             }
 
-            // Automatically scan all user directories (starting with `_`)
-            for entry in fs::read_dir(library_path).into_diagnostic()? {
-                let entry = entry.into_diagnostic()?;
+            let entries = match fs::read_dir(library_path) {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+
+            for entry in entries {
+                let entry = match entry {
+                    Ok(e) => e,
+                    Err(_) => continue,
+                };
+
                 let path = entry.path();
-                let name = entry.file_name().into_string().unwrap_or_default();
+                let name = entry.file_name().to_string_lossy().to_string();
 
                 if path.is_dir() && name.starts_with('_') {
                     // Scan books in this user directory
-                    for book_entry in fs::read_dir(&path).unwrap_or_else(|_| fs::read_dir("/").unwrap()) {
-                        if let Ok(book_entry) = book_entry {
+                    if let Ok(user_entries) = fs::read_dir(&path) {
+                        for book_entry in user_entries.flatten() {
                             let book_path = book_entry.path();
                             if book_path.is_dir() && self.is_book_directory(&book_path) {
                                 match BookInfo::new(book_path) {
                                     Ok(book) => books.push(book),
-                                    Err(e) => {
-                                        if config.verbose {
-                                            eprintln!("Warning: Failed to process book directory: {}", e);
-                                        }
+                                    Err(e) if config.verbose => {
+                                        eprintln!("Warning: Failed to process book directory: {}", e);
                                     }
+                                    _ => {}
                                 }
                             }
                         }
@@ -99,7 +106,7 @@ impl LibraryFinder {
         Ok(books)
     }
 
-    fn calculate_confidence(&self, path: &Path) -> f32 {
+    fn calculate_confidence(&self, path: &PathBuf) -> f32 {
         let mut confidence: f32 = 0.1;
 
         if path.join("metadata").exists() {
@@ -112,7 +119,7 @@ impl LibraryFinder {
 
             for entry in entries.flatten() {
                 let entry_path = entry.path();
-                let name = entry.file_name().into_string().unwrap_or_default();
+                let name = entry.file_name().to_string_lossy();
 
                 if entry_path.is_dir() && name.starts_with('_') {
                     user_dirs += 1;
@@ -137,7 +144,7 @@ impl LibraryFinder {
         confidence.min(1.0)
     }
 
-    fn is_book_directory(&self, path: &Path) -> bool {
+    fn is_book_directory(&self, path: &PathBuf) -> bool {
         if !path.is_dir() {
             return false;
         }
@@ -150,8 +157,7 @@ impl LibraryFinder {
                 let entry_path = entry.path();
                 if entry_path.is_file() {
                     if let Some(ext) = entry_path.extension() {
-                        let ext_str = ext.to_string_lossy().to_lowercase();
-                        match ext_str.as_str() {
+                        match ext.to_string_lossy().to_lowercase().as_str() {
                             "dat" => has_dat = true,
                             "epub" | "pdf" => has_book_file = true,
                             _ => {}
