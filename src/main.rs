@@ -1,3 +1,4 @@
+use aes::cipher::BlockDecryptMut;
 use aes::cipher::KeyIvInit;
 use anyhow::{Context, Result};
 use clap::Parser;
@@ -150,7 +151,7 @@ async fn main() -> miette::Result<()> {
     }
     
     // Save final state
-    save_processing_state(&state)?;
+    save_processing_state(&state).map_err(|e| miette::miette!("{}", e))?;
     
     print_summary(&state);
     Ok(())
@@ -290,8 +291,7 @@ async fn process_single_book(
         match decrypt_book_with_original_logic(book, &config.device_id, pb).await {
             Ok(_) => return Ok(()),
             Err(e) if retries > 1 && is_retryable_error(&e) => {
-                let message = format!("Retrying... ({} attempts left)", retries - 1);
-                pb.set_message(&message);
+                pb.set_message(&format!("Retrying... ({} attempts left)", retries - 1));
                 tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
             }
             Err(e) => return Err(e),
@@ -359,8 +359,8 @@ fn decrypt_key(book_info: &BookInfo, device_id: &str) -> Result<[u8; 16]> {
     let mut iv = [0; 16];
     iv.copy_from_slice(&data_file[0..16]);
 
-    let plaintext = cbc::Decryptor::<aes::Aecs7.decrypt_padded_mut::<aes::cipher::block_padding::Pkcs7>s128>::new(&key.into(), &iv.into())
-        (&data_file[16..])
+    let plaintext = cbc::Decryptor::<aes::Aes128>::new(&key.into(), &iv.into())
+    .decrypt_padded_mut::<aes::cipher::block_padding::Pkcs7>(&data_file[16..])
         .map_err(|error| anyhow::anyhow!("Decryption failed: {}", error))?;
 
     let plaintext_str = std::str::from_utf8(&plaintext)
