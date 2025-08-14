@@ -291,7 +291,8 @@ async fn process_single_book(
         match decrypt_book_with_original_logic(book, &config.device_id, pb).await {
             Ok(_) => return Ok(()),
             Err(e) if retries > 1 && is_retryable_error(&e) => {
-                pb.set_message(&format!("Retrying... ({} attempts left)", retries - 1));
+                let retry_msg = format!("Retrying... ({} attempts left)", retries - 1);
+                pb.set_message(&retry_msg);
                 tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
             }
             Err(e) => return Err(e),
@@ -344,7 +345,7 @@ async fn decrypt_book_with_original_logic(
 // Original decrypt_key function adapted
 fn decrypt_key(book_info: &BookInfo, device_id: &str) -> Result<[u8; 16]> {
     let data_file_path = book_info.get_data_file_path();
-    let data_file = fs::read(&data_file_path)
+    let mut data_file = fs::read(&data_file_path)
         .with_context(|| format!("Failed to read data file: {}", data_file_path.display()))?;
 
     if data_file.len() < 32 {
@@ -360,7 +361,7 @@ fn decrypt_key(book_info: &BookInfo, device_id: &str) -> Result<[u8; 16]> {
     iv.copy_from_slice(&data_file[0..16]);
 
     let plaintext = cbc::Decryptor::<aes::Aes128>::new(&key.into(), &iv.into())
-    .decrypt_padded_mut::<aes::cipher::block_padding::Pkcs7>(&data_file[16..])
+        .decrypt_padded_mut::<aes::cipher::block_padding::Pkcs7>(&mut data_file[16..])
         .map_err(|error| anyhow::anyhow!("Decryption failed: {}", error))?;
 
     let plaintext_str = std::str::from_utf8(&plaintext)
