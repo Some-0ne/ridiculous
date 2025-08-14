@@ -1,5 +1,12 @@
 #!/bin/bash
 
+# Self-permission check - make script executable if it isn't
+if [[ ! -x "$0" ]]; then
+    echo "🔧 Making script executable..."
+    chmod +x "$0"
+    exec "$0" "$@"
+fi
+
 # Device ID Helper Script for Ridiculous Enhanced
 # Helps users get their RIDI device ID, user index, and user ID
 # Auto-handles permissions and provides multiple execution methods
