@@ -127,7 +127,7 @@ impl LibraryFinder {
     }
     
     fn calculate_confidence(&self, path: &Path) -> f32 {
-        let mut confidence = 0.1; // Base confidence
+        let mut confidence: f32 = 0.1; // Base confidence
         
         // Check for RIDI-specific structure
         if path.join("metadata").exists() {
@@ -167,7 +167,7 @@ impl LibraryFinder {
             Err(_) => return 0.0,
         }
         
-        confidence.min(1.0)
+        confidence.min(1.0f32)
     }
     
     fn is_book_directory(&self, path: &Path) -> bool {
@@ -198,4 +198,4 @@ impl LibraryFinder {
         
         has_dat && has_book
     }
-}    
+}
