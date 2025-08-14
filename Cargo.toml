@@ -1,32 +1,65 @@
 [package]
 name = "ridiculous"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 authors = ["Your Name <your.email@example.com>"]
-description = "Enhanced RIDI Books DRM removal tool with GUI and smart detection"
+description = "Enhanced RIDI book decryption tool with batch processing and GUI support"
 license = "MIT"
+repository = "https://github.com/Some-0ne/ridiculous"
+
+[dependencies]
+# Core async runtime
+tokio = { version = "1.0", features = ["full"] }
+anyhow = "1.0"
+miette = { version = "5.0", features = ["fancy"] }
+
+# CLI and config
+clap = { version = "4.0", features = ["derive"] }
+toml = "0.8"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# HTTP client for API calls
+reqwest = { version = "0.11", features = ["json"] }
+
+# Progress bars and UI
+indicatif = { version = "0.17", features = ["tokio"] }
+console = "0.15"
+
+# File system and paths
+dirs = "5.0"
+walkdir = "2.0"
+
+# Cryptography (original RIDI decryption)
+aes = "0.8"
+cbc = "0.1"
+
+# Text processing
+regex = "1.0"
+
+# Windows registry (Windows only)
+[target.'cfg(windows)'.dependencies]
+winreg = "0.52"
+
+# Optional GUI dependencies
+egui = { version = "0.24", optional = true }
+eframe = { version = "0.24", optional = true }
+
+# Development dependencies
+[dev-dependencies]
+tempfile = "3.0"
+tokio-test = "0.4"
+
+[features]
+default = []
+gui = ["egui", "eframe"]
 
 [[bin]]
 name = "ridiculous"
 path = "src/main.rs"
 
-[dependencies]
-# Original dependencies (keep these from your current Cargo.toml)
-clap = { version = "4.0", features = ["derive"] }
-
-# New dependencies for enhanced functionality
-serde = { version = "1.0", features = ["derive"] }
-toml = "0.8"
-indicatif = "0.17"
-miette = { version = "5.0", features = ["fancy"] }
-dirs = "5.0"  # For cross-platform directory detection
-console = "0.15"  # For better terminal colors/formatting
-uuid = { version = "1.0", features = ["v4"] }
-thiserror = "1.0"  # For better error handling
-
-# Required for directory scanning and error handling
-anyhow = "1.0"
-walkdir = "2.0"
-
-[dev-dependencies]
-tempfile = "3.0"  # For testing
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"

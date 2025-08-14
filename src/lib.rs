@@ -30,7 +30,8 @@
 
 pub mod types;
 pub mod library_finder;
+pub mod credential_manager;
 
-// Re-export main types for easier access
-pub use types::{BookInfo, BookFormat, LibraryLocation, Config, ProcessingError, ConfigError};
+pub use types::*;
 pub use library_finder::LibraryFinder;
+pub use credential_manager::CredentialManager;
