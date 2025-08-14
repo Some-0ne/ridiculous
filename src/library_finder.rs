@@ -142,7 +142,7 @@ impl LibraryFinder {
                 
                 for entry in entries.flatten() {
                     let entry_path = entry.path();
-                    let name = entry.file_name().to_string_lossy();
+                    let name = entry.file_name().to_string_lossy().to_string();
                     
                     if entry_path.is_dir() && name.starts_with('_') {
                         user_dirs += 1;
