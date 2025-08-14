@@ -198,3 +198,4 @@ impl LibraryFinder {
         
         has_dat && has_book
     }
+}    
