@@ -286,13 +286,13 @@ async fn process_single_book(
     pb.set_position(10);
     
     // Retry logic for file operations
-    let mut retries = 3;
-    while retries > 0 {
+    let retries = 3;
+    for attempt in 0..retries {
         match decrypt_book_with_original_logic(book, &config.device_id, pb).await {
             Ok(_) => return Ok(()),
-            Err(e) if retries > 1 && is_retryable_error(&e) => {
-                let retry_msg = format!("Retrying... ({} attempts left)", retries - 1);
-                pb.set_message(&retry_msg);
+            Err(e) if attempt < retries - 1 && is_retryable_error(&e) => {
+                let retry_msg = format!("Retrying... ({} attempts left)", retries - attempt - 1);
+                pb.set_message(retry_msg.as_str());
                 tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
             }
             Err(e) => return Err(e),
@@ -383,7 +383,7 @@ fn decrypt_key(book_info: &BookInfo, device_id: &str) -> Result<[u8; 16]> {
 // Original decrypt_book function adapted
 fn decrypt_book_content(book_info: &BookInfo, key: &[u8; 16]) -> Result<Vec<u8>> {
     let book_file_path = book_info.get_book_file_path();
-    let book_file = fs::read(&book_file_path)
+    let mut book_file = fs::read(&book_file_path)
         .with_context(|| format!("Failed to read book file: {}", book_file_path.display()))?;
 
     if book_file.len() < 16 {
@@ -394,10 +394,10 @@ fn decrypt_book_content(book_info: &BookInfo, key: &[u8; 16]) -> Result<Vec<u8>>
     iv.copy_from_slice(&book_file[0..16]);
 
     let decrypted = cbc::Decryptor::<aes::Aes128>::new(key.into(), &iv.into())
-        .decrypt_padded_mut::<aes::cipher::block_padding::Pkcs7>(&book_file[16..])
+        .decrypt_padded_mut::<aes::cipher::block_padding::Pkcs7>(&mut book_file[16..])
         .map_err(|error| anyhow::anyhow!("Book decryption failed: {}", error))?;
 
-    Ok(decrypted)
+    Ok(decrypted.to_vec())
 }
 
 fn get_output_path(book: &BookInfo) -> Result<PathBuf> {
@@ -449,7 +449,7 @@ async fn run_diagnostics(args: &Args) -> miette::Result<()> {
         }
         
         // Try to find books
-        println!("\n3. Checking books...");
+        println!("\\n3. Checking books...");
         match finder.find_books(&config) {
             Ok(books) => {
                 println!("   📚 Found {} books", books.len());
@@ -463,11 +463,11 @@ async fn run_diagnostics(args: &Args) -> miette::Result<()> {
             Err(e) => println!("   ❌ Error finding books: {}", e),
         }
     } else {
-        println!("\n2. Credentials not provided - skipping validation");
+        println!("\\n2. Credentials not provided - skipping validation");
         println!("   💡 Use --device-id and --user-idx to test credentials");
     }
     
-    println!("\n🎯 Diagnostics complete!");
+    println!("\\n🎯 Diagnostics complete!");
     Ok(())
 }
 
@@ -504,7 +504,7 @@ fn load_or_create_config(args: &Args) -> miette::Result<Config> {
     // Validate required fields
     if config.device_id.is_empty() || config.user_idx.is_empty() {
         return Err(miette!(
-            "Missing credentials. Run with --device-id and --user-idx or use config file.\n\
+            "Missing credentials. Run with --device-id and --user-idx or use config file.\\n\\
              Get credentials from: https://account.ridibooks.com/api/user-devices/app"
         ));
     }
@@ -540,15 +540,15 @@ fn save_processing_state(state: &ProcessingState) -> Result<()> {
 }
 
 fn print_summary(state: &ProcessingState) {
-    println!("\n📊 Processing Summary:");
+    println!("\\n📊 Processing Summary:");
     println!("   ✅ Completed: {}", state.completed.len());
     println!("   ❌ Failed: {}", state.failed.len());
     
     if !state.failed.is_empty() {
-        println!("\n❌ Failed books:");
+        println!("\\n❌ Failed books:");
         for (book_id, error) in &state.failed {
             println!("   - {}: {}", book_id, error);
         }
-        println!("\n💡 Use --resume to retry failed books");
+        println!("\\n💡 Use --resume to retry failed books");
     }
 }
