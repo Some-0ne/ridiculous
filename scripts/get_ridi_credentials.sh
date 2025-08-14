@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Device ID Helper Script for Ridiculous Enhanced
-# Helps users get their RIDI device ID and user index
+# Helps users get their RIDI device ID, user index, and user ID
 
 set -e
 
@@ -14,73 +14,14 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 NC='\033[0m' # No Color
 
+# Global variables for credentials
+device_id=""
+user_idx=""
+user_id=""
+
 # Print colored header
 print_header() {
-    echo -e "${CYAN}
-
-# Main script execution
-main() {
-    clear
-    print_header
-    
-    echo "This script will help you get your RIDI device ID and user index"
-    echo "needed for the ridiculous book decryption tool."
-    echo
-    echo -e "${YELLOW}⚠️  Important:${NC}"
-    echo "• You must have a RIDI account with purchased books"
-    echo "• You need to be logged into RIDI in your browser"
-    echo "• This process is safe and only retrieves your own device info"
-    echo
-    
-    read -p "Ready to start? Press Enter to continue..."
-    echo
-    
-    # Check if we have helpful tools
-    has_jq=false
-    if check_dependencies; then
-        has_jq=true
-    fi
-    
-    # Step 1: Login
-    open_login_page
-    
-    # Step 2: Get device info
-    get_device_info
-    
-    # Step 3: Parse JSON
-    if $has_jq; then
-        if parse_with_jq; then
-            echo -e "${GREEN}✅ Successfully parsed device information!${NC}"
-            echo
-            echo "You can use any of the device IDs and user indices shown above."
-            echo "Typically, choose the device you use most often for reading."
-            echo
-            parse_manually
-        else
-            parse_manually
-        fi
-    else
-        parse_manually
-    fi
-    
-    # Step 4: Test credentials
-    if [[ -n "$device_id" && -n "$user_idx" ]]; then
-        test_credentials
-        save_config
-        print_final_instructions
-    else
-        print_error "Could not obtain valid credentials"
-        exit 1
-    fi
-}
-
-# Handle interrupts gracefully
-trap 'echo; print_error "Script interrupted by user"; exit 1' INT
-
-# Check if script is being run directly
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-    main "$@"
-fi${BOLD}"
+    echo -e "${CYAN}${BOLD}"
     echo "🔑 ═══════════════════════════════════════════════════════════"
     echo "   RIDI Device ID & User Index Helper"
     echo "   ═══════════════════════════════════════════════════════════"
@@ -118,6 +59,8 @@ check_dependencies() {
         print_warning "jq is not installed but recommended for JSON parsing"
         echo "  On macOS: brew install jq"
         echo "  On Ubuntu/Debian: sudo apt install jq"
+        echo "  On Arch Linux: sudo pacman -S jq"
+        echo "  On CentOS/RHEL: sudo yum install jq"
         echo
         echo "  Don't worry - we'll help you parse the JSON manually if needed!"
         echo
@@ -155,6 +98,24 @@ open_login_page() {
     echo
 }
 
+# Get user profile info (optional step to get user_id from profile)
+get_user_profile() {
+    print_step "2a" "Checking user profile for additional information..."
+    
+    local profile_url="https://account.ridibooks.com/api/user/profile"
+    
+    echo -e "🔗 Profile API URL: ${CYAN}$profile_url${NC}"
+    echo
+    echo "This can help find your user ID if it's not in the device info."
+    echo "Open this URL in a new tab (keep the login tab open):"
+    echo
+    echo -e "${BOLD}$profile_url${NC}"
+    echo
+    
+    read -p "Press Enter to continue to device information..."
+    echo
+}
+
 # Open API endpoint and get JSON
 get_device_info() {
     print_step "2" "Opening RIDI API endpoint to get device information..."
@@ -176,7 +137,9 @@ get_device_info() {
     echo -e "🔗 API URL: ${CYAN}$api_url${NC}"
     echo
     echo "This page will show JSON data with your device information."
-    echo "Look for entries that contain 'device_id' and 'user_idx' fields."
+    echo "Look for entries that contain 'device_id', 'user_idx', and 'user_id' fields."
+    echo
+    echo "If you see an error or empty result, make sure you're still logged in."
     echo
     read -p "Press Enter when the API page has loaded..."
     echo
@@ -187,13 +150,16 @@ parse_with_jq() {
     echo "Great! Let's parse the JSON to find your credentials."
     echo
     echo "Please copy the ENTIRE JSON response from the browser and paste it here."
-    echo "Tip: You can usually select all with Cmd+A (Mac) or Ctrl+A (Windows/Linux)"
+    echo "Tips:"
+    echo "  • Select all with Cmd+A (Mac) or Ctrl+A (Windows/Linux)"
+    echo "  • If you see 'null' or '[]', make sure you're logged in"
+    echo "  • The JSON should contain device information"
     echo
-    echo "Paste the JSON here (press Enter when done, Ctrl+D to finish):"
+    echo "Paste the JSON here, then press Ctrl+D (Unix) or Ctrl+Z (Windows) to finish:"
     
     local json_content=""
     while IFS= read -r line; do
-        json_content+="$line"
+        json_content+="$line"$'\n'
     done
     
     if [[ -z "$json_content" ]]; then
@@ -201,28 +167,60 @@ parse_with_jq() {
         return 1
     fi
     
+    # Check if JSON is valid and not empty
+    if ! echo "$json_content" | jq . >/dev/null 2>&1; then
+        print_error "Invalid JSON format"
+        return 1
+    fi
+    
+    # Check for common error patterns
+    if echo "$json_content" | grep -q '"result":null\|"result":\[\]'; then
+        print_error "API returned empty result - make sure you're logged in"
+        return 1
+    fi
+    
     # Try to parse with jq
     local devices
-    if devices=$(echo "$json_content" | jq -r '.result[]? | select(.device_id and .user_idx) | "Device: \(.device_name // "Unknown") - ID: \(.device_id) - User Index: \(.user_idx)"' 2>/dev/null); then
+    if devices=$(echo "$json_content" | jq -r '.result[]? | select(.device_id and .user_idx) | "Device: \(.device_name // .device_type // "Unknown") [\(.os // "Unknown OS")] - ID: \(.device_id) - User Index: \(.user_idx) - User ID: \(.user_id // "N/A")"' 2>/dev/null); then
         if [[ -n "$devices" ]]; then
             echo -e "${GREEN}📱 Found devices:${NC}"
             echo "$devices"
             echo
             
-            # Extract just the values for easy copying
-            echo -e "${YELLOW}📋 Device IDs found:${NC}"
-            echo "$json_content" | jq -r '.result[]? | select(.device_id) | .device_id' 2>/dev/null
-            echo
+            # Extract and display values separately
+            local device_ids user_indices user_ids
             
-            echo -e "${YELLOW}📋 User Indices found:${NC}"
-            echo "$json_content" | jq -r '.result[]? | select(.user_idx) | .user_idx' 2>/dev/null
-            echo
+            device_ids=$(echo "$json_content" | jq -r '.result[]? | select(.device_id) | .device_id' 2>/dev/null)
+            user_indices=$(echo "$json_content" | jq -r '.result[]? | select(.user_idx) | .user_idx' 2>/dev/null)
+            user_ids=$(echo "$json_content" | jq -r '.result[]? | select(.user_id) | .user_id' 2>/dev/null)
+            
+            if [[ -n "$device_ids" ]]; then
+                echo -e "${YELLOW}📋 Device IDs found:${NC}"
+                echo "$device_ids" | nl -w2 -s'. '
+                echo
+            fi
+            
+            if [[ -n "$user_indices" ]]; then
+                echo -e "${YELLOW}📋 User Indices found:${NC}"
+                echo "$user_indices" | nl -w2 -s'. '
+                echo
+            fi
+            
+            if [[ -n "$user_ids" ]] && [[ "$user_ids" != "null" ]]; then
+                echo -e "${YELLOW}📋 User IDs found:${NC}"
+                echo "$user_ids" | nl -w2 -s'. '
+                echo
+            else
+                echo -e "${YELLOW}📋 User IDs:${NC} None found (this might be normal)"
+                echo
+            fi
             
             return 0
         fi
     fi
     
     print_error "Could not parse JSON automatically"
+    echo "The JSON structure might be different than expected."
     return 1
 }
 
@@ -234,6 +232,7 @@ parse_manually() {
     echo
     echo -e "${CYAN}  \"device_id\": \"abc123def456\",${NC}"
     echo -e "${CYAN}  \"user_idx\": \"789012345\",${NC}"
+    echo -e "${CYAN}  \"user_id\": \"987654321\",${NC} (might not be present)"
     echo
     echo "There might be multiple devices listed. Choose the one that corresponds"
     echo "to the device/app you use most often for reading RIDI books."
@@ -242,18 +241,19 @@ parse_manually() {
     # Get device ID
     while true; do
         echo
-        read -p "Please enter your device_id (the long string after \"device_id\":): " device_id
+        read -p "Please enter your device_id: " input_device_id
         
-        if [[ -z "$device_id" ]]; then
+        if [[ -z "$input_device_id" ]]; then
             print_error "Device ID cannot be empty"
             continue
         fi
         
-        # Clean up the input (remove quotes, spaces)
-        device_id=$(echo "$device_id" | sed 's/[",]//g' | tr -d ' ')
+        # Clean up the input (remove quotes, spaces, commas)
+        device_id=$(echo "$input_device_id" | sed 's/[",]//g' | tr -d ' ')
         
         if [[ ${#device_id} -lt 10 ]]; then
-            print_error "Device ID seems too short. Please double-check."
+            print_error "Device ID seems too short (${#device_id} characters). Please double-check."
+            echo "  A typical device ID is much longer."
             continue
         fi
         
@@ -263,18 +263,40 @@ parse_manually() {
     # Get user index
     while true; do
         echo
-        read -p "Please enter your user_idx (usually a number): " user_idx
+        read -p "Please enter your user_idx: " input_user_idx
         
-        if [[ -z "$user_idx" ]]; then
+        if [[ -z "$input_user_idx" ]]; then
             print_error "User index cannot be empty"
             continue
         fi
         
         # Clean up the input
-        user_idx=$(echo "$user_idx" | sed 's/[",]//g' | tr -d ' ')
+        user_idx=$(echo "$input_user_idx" | sed 's/[",]//g' | tr -d ' ')
         
         if [[ ! "$user_idx" =~ ^[0-9]+$ ]]; then
-            print_warning "User index should typically be a number, but we'll accept what you provided"
+            print_warning "User index should typically be a number, but we'll accept: $user_idx"
+        fi
+        
+        break
+    done
+    
+    # Get user ID (optional)
+    while true; do
+        echo
+        read -p "Please enter your user_id (optional, press Enter to skip): " input_user_id
+        
+        # Make it optional since it might not always be present
+        if [[ -z "$input_user_id" ]]; then
+            echo "No user ID provided - that's okay, it might not be required."
+            user_id=""
+            break
+        fi
+        
+        # Clean up the input
+        user_id=$(echo "$input_user_id" | sed 's/[",]//g' | tr -d ' ')
+        
+        if [[ ! "$user_id" =~ ^[0-9]+$ ]] && [[ -n "$user_id" ]]; then
+            print_warning "User ID should typically be a number, but we'll accept: $user_id"
         fi
         
         break
@@ -284,7 +306,44 @@ parse_manually() {
     print_success "Credentials collected!"
     echo -e "  Device ID: ${GREEN}$device_id${NC}"
     echo -e "  User Index: ${GREEN}$user_idx${NC}"
+    if [[ -n "$user_id" ]]; then
+        echo -e "  User ID: ${GREEN}$user_id${NC}"
+    else
+        echo -e "  User ID: ${YELLOW}Not provided${NC}"
+    fi
     echo
+}
+
+# Validate input format
+validate_credentials() {
+    local errors=0
+    
+    echo -e "${BLUE}🔍 Validating credential format...${NC}"
+    
+    # Check device_id format
+    if [[ ${#device_id} -lt 20 ]]; then
+        print_warning "Device ID seems unusually short (${#device_id} chars)"
+        ((errors++))
+    fi
+    
+    # Check user_idx format
+    if [[ ! "$user_idx" =~ ^[0-9]+$ ]]; then
+        print_warning "User index is not numeric: $user_idx"
+        ((errors++))
+    fi
+    
+    # Check user_id format if provided
+    if [[ -n "$user_id" ]] && [[ ! "$user_id" =~ ^[0-9]+$ ]]; then
+        print_warning "User ID is not numeric: $user_id"
+        ((errors++))
+    fi
+    
+    if [[ $errors -eq 0 ]]; then
+        print_success "Credential format looks good"
+    else
+        echo -e "${YELLOW}Found $errors potential format issues, but continuing...${NC}"
+        echo
+    fi
 }
 
 # Test credentials
@@ -295,11 +354,17 @@ test_credentials() {
     # Try to run ridiculous in validation mode
     if command -v ridiculous &> /dev/null; then
         echo "Testing with ridiculous --validate-only..."
-        if ridiculous --device-id "$device_id" --user-idx "$user_idx" --validate-only 2>/dev/null; then
+        local test_args="--device-id \"$device_id\" --user-idx \"$user_idx\""
+        if [[ -n "$user_id" ]]; then
+            test_args="$test_args --user-id \"$user_id\""
+        fi
+        
+        if eval "ridiculous $test_args --validate-only" 2>/dev/null; then
             print_success "Credentials appear to be valid!"
         else
             print_warning "Could not validate credentials automatically"
             echo "  This might be normal if you haven't downloaded any books yet"
+            echo "  or if the ridiculous tool needs additional setup"
         fi
     else
         print_warning "Ridiculous binary not found in PATH"
@@ -321,12 +386,27 @@ save_config() {
             [Yy]* ) 
                 # Create config file
                 local config_file="$HOME/.ridiculous.toml"
+                
+                # Backup existing config if it exists
+                if [[ -f "$config_file" ]]; then
+                    cp "$config_file" "$config_file.backup.$(date +%s)"
+                    echo "  Backed up existing config to $config_file.backup.*"
+                fi
+                
                 cat > "$config_file" << EOF
 # Ridiculous Enhanced Configuration
 # Generated on $(date)
 
 device_id = "$device_id"
 user_idx = "$user_idx"
+EOF
+                
+                # Add user_id only if it was provided
+                if [[ -n "$user_id" ]]; then
+                    echo "user_id = \"$user_id\"" >> "$config_file"
+                fi
+                
+                cat >> "$config_file" << EOF
 verbose = false
 organize_output = false
 backup_originals = false
@@ -353,6 +433,9 @@ print_final_instructions() {
     echo "Your RIDI credentials:"
     echo -e "  Device ID: ${CYAN}$device_id${NC}"
     echo -e "  User Index: ${CYAN}$user_idx${NC}"
+    if [[ -n "$user_id" ]]; then
+        echo -e "  User ID: ${CYAN}$user_id${NC}"
+    fi
     echo
     echo -e "${YELLOW}📋 Next Steps:${NC}"
     echo "1. Make sure RIDI app is installed and you're logged in"
@@ -363,7 +446,11 @@ print_final_instructions() {
     echo -e "   ${BOLD}ridiculous${NC}"
     echo
     echo -e "   ${CYAN}# Or with explicit credentials:${NC}"
-    echo -e "   ${BOLD}ridiculous --device-id \"$device_id\" --user-idx \"$user_idx\"${NC}"
+    local cmd_line="ridiculous --device-id \"$device_id\" --user-idx \"$user_idx\""
+    if [[ -n "$user_id" ]]; then
+        cmd_line="$cmd_line --user-id \"$user_id\""
+    fi
+    echo -e "   ${BOLD}$cmd_line${NC}"
     echo
     echo -e "   ${CYAN}# Verbose mode with progress:${NC}"
     echo -e "   ${BOLD}ridiculous --verbose${NC}"
@@ -373,3 +460,124 @@ print_final_instructions() {
     echo
     echo -e "${GREEN}✨ Enjoy your DRM-free books!${NC}"
     echo
+    echo -e "${YELLOW}💡 Troubleshooting tips:${NC}"
+    echo "• If you get authentication errors, try logging out and back into RIDI"
+    echo "• Make sure books are fully downloaded in the RIDI app before decrypting"
+    echo "• Different devices might have different capabilities"
+    echo "• You can run this script again to get credentials for other devices"
+    echo
+}
+
+# Show alternative methods if main method fails
+show_alternatives() {
+    echo -e "${BLUE}🔄 Alternative methods:${NC}"
+    echo
+    echo "If the automatic method didn't work, you can also try:"
+    echo
+    echo "1. Browser Developer Tools:"
+    echo "   • Open browser dev tools (F12)"
+    echo "   • Go to Network tab"
+    echo "   • Visit the API URL again"
+    echo "   • Look for the request and copy the response"
+    echo
+    echo "2. Manual API call:"
+    echo "   • Use curl or similar tool with your browser cookies"
+    echo "   • Export cookies from browser and use with curl"
+    echo
+    echo "3. Check different endpoints:"
+    echo "   • Sometimes user info is in profile endpoint"
+    echo "   • Try: https://account.ridibooks.com/api/user/profile"
+    echo
+}
+
+# Main script execution
+main() {
+    # Make script executable if it isn't already
+    script_path="${BASH_SOURCE[0]}"
+    if [[ ! -x "$script_path" ]]; then
+        echo -e "${YELLOW}🔧 Making script executable...${NC}"
+        chmod +x "$script_path"
+        print_success "Script is now executable"
+        echo
+    fi
+    
+    clear
+    print_header
+    
+    echo "This script will help you get your RIDI device ID, user index, and user ID"
+    echo "needed for the ridiculous book decryption tool."
+    echo
+    echo -e "${YELLOW}⚠️  Important:${NC}"
+    echo "• You must have a RIDI account with purchased books"
+    echo "• You need to be logged into RIDI in your browser"
+    echo "• This process is safe and only retrieves your own device info"
+    echo "• Keep your credentials secure and don't share them"
+    echo
+    
+    read -p "Ready to start? Press Enter to continue..."
+    echo
+    
+    # Check if we have helpful tools
+    has_jq=false
+    if check_dependencies; then
+        has_jq=true
+    fi
+    
+    # Step 1: Login
+    open_login_page
+    
+    # Optional: Check profile for user ID
+    echo -e "${YELLOW}Would you like to check the user profile endpoint first?${NC}"
+    echo "This might help find your user ID if it's not in device info."
+    read -p "Check profile? (y/n): " check_profile
+    if [[ "$check_profile" =~ ^[Yy] ]]; then
+        get_user_profile
+    fi
+    
+    # Step 2: Get device info
+    get_device_info
+    
+    # Step 3: Parse JSON
+    local parse_success=false
+    if $has_jq; then
+        if parse_with_jq; then
+            echo -e "${GREEN}✅ Successfully parsed device information!${NC}"
+            echo
+            echo "You can use any of the device IDs and user indices shown above."
+            echo "Typically, choose the device you use most often for reading."
+            echo
+            parse_success=true
+        fi
+    fi
+    
+    # Always offer manual parsing as backup
+    if ! $parse_success; then
+        parse_manually
+    else
+        echo "Do you want to manually enter different credentials instead?"
+        read -p "Manual entry? (y/n): " manual_choice
+        if [[ "$manual_choice" =~ ^[Yy] ]]; then
+            parse_manually
+        fi
+    fi
+    
+    # Step 4: Validate and test credentials
+    if [[ -n "$device_id" && -n "$user_idx" ]]; then
+        validate_credentials
+        test_credentials
+        save_config
+        print_final_instructions
+    else
+        print_error "Could not obtain valid credentials"
+        show_alternatives
+        exit 1
+    fi
+}
+
+# Handle interrupts gracefully
+trap 'echo; print_error "Script interrupted by user"; exit 1' INT
+
+# Check if script is being run directly
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$@"
+fi
