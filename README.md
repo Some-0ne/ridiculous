@@ -268,15 +268,9 @@ cargo clippy
 
 **Use at your own risk.** The developers assume no responsibility for misuse.
 
-## 📜 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
+## Acknowledgments
 
 - Original [ridiculous](https://github.com/hsj1/ridiculous) project by hsj1
-- RIDI Books platform
 - Rust async ecosystem (tokio, etc.)
-- All contributors and testers
 
 ---
