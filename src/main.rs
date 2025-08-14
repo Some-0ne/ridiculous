@@ -291,8 +291,7 @@ async fn process_single_book(
         match decrypt_book_with_original_logic(book, &config.device_id, pb).await {
             Ok(_) => return Ok(()),
             Err(e) if attempt < retries - 1 && is_retryable_error(&e) => {
-                let retry_msg = format!("Retrying... ({} attempts left)", retries - attempt - 1);
-                pb.set_message(retry_msg.as_str());
+                pb.set_message("Retrying...");
                 tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
             }
             Err(e) => return Err(e),
