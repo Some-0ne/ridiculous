@@ -377,7 +377,7 @@ main() {
     fi
     echo
     
-    read -p "Continue with installation? (y/N): " confirm
+    read -p "Continue with installation? (Y/N): " confirm
     case $confirm in
         [Yy]* ) ;;
         * ) echo "Installation cancelled."; exit 0;;
