@@ -14,17 +14,23 @@ impl LibraryFinder {
 
         if cfg!(target_os = "windows") {
             if let Ok(appdata) = std::env::var("APPDATA") {
-                common_paths.push(appdata_path(&appdata));
+                common_paths.push(PathBuf::from(appdata).join("Ridibooks").join("library"));
             }
-            if let Some(local) = dirs::data_local_dir() {
-                common_paths.push(local.join("Ridibooks").join("library"));
+            if let Some(data_local) = dirs::data_local_dir() {
+                common_paths.push(data_local.join("Ridibooks").join("library"));
             }
         } else if cfg!(target_os = "macos") {
             if let Ok(home) = std::env::var("HOME") {
-                common_paths.push(home_path(&home));
+                common_paths.push(
+                    PathBuf::from(home)
+                        .join("Library")
+                        .join("Application Support")
+                        .join("Ridibooks")
+                        .join("library"),
+                );
             }
         } else {
-            // Linux / Unix
+            // Linux and other Unix-like systems
             if let Some(home) = dirs::home_dir() {
                 common_paths.push(home.join(".local/share/Ridibooks/library"));
                 common_paths.push(home.join(".ridibooks/library"));
@@ -35,50 +41,55 @@ impl LibraryFinder {
     }
 
     pub fn find_library_locations(&self) -> Vec<LibraryLocation> {
-        let mut locations: Vec<LibraryLocation> = self
-            .common_paths
-            .iter()
-            .filter(|path| path.exists() && path.is_dir())
-            .filter_map(|path| {
+        let mut locations = Vec::new();
+
+        for path in &self.common_paths {
+            if path.exists() && path.is_dir() {
                 let confidence = self.calculate_confidence(path);
                 if confidence > 0.0 {
-                    Some(LibraryLocation {
+                    locations.push(LibraryLocation {
                         path: path.clone(),
                         confidence,
                         source: LibrarySource::CommonPath,
-                    })
-                } else {
-                    None
+                    });
                 }
-            })
-            .collect();
+            }
+        }
 
+        // Sort by confidence descending
         locations.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap());
         locations
     }
 
     pub fn find_books(&self, config: &Config) -> miette::Result<Vec<BookInfo>> {
-        let library_path = self.get_library_path(&config.user_idx)?;
-
-        if !library_path.exists() {
-            return Err(miette!(
-                "RIDI library not found at: {}\nMake sure RIDI is installed and books are downloaded",
-                library_path.display()
-            ));
-        }
-
         let mut books = Vec::new();
 
-        for entry in fs::read_dir(&library_path).into_diagnostic()? {
-            let entry = entry.into_diagnostic()?;
-            let path = entry.path();
+        for library_path in &self.common_paths {
+            if !library_path.exists() {
+                continue;
+            }
 
-            if path.is_dir() && self.is_book_directory(&path) {
-                match BookInfo::new(path) {
-                    Ok(book) => books.push(book),
-                    Err(e) => {
-                        if config.verbose {
-                            eprintln!("Warning: Failed to process book directory: {}", e);
+            // Automatically scan all user directories (starting with `_`)
+            for entry in fs::read_dir(library_path).into_diagnostic()? {
+                let entry = entry.into_diagnostic()?;
+                let path = entry.path();
+                let name = entry.file_name().into_string().unwrap_or_default();
+
+                if path.is_dir() && name.starts_with('_') {
+                    // Scan books in this user directory
+                    for book_entry in fs::read_dir(&path).unwrap_or_else(|_| fs::read_dir("/").unwrap()) {
+                        if let Ok(book_entry) = book_entry {
+                            let book_path = book_entry.path();
+                            if book_path.is_dir() && self.is_book_directory(&book_path) {
+                                match BookInfo::new(book_path) {
+                                    Ok(book) => books.push(book),
+                                    Err(e) => {
+                                        if config.verbose {
+                                            eprintln!("Warning: Failed to process book directory: {}", e);
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -88,46 +99,20 @@ impl LibraryFinder {
         Ok(books)
     }
 
-    fn get_library_path(&self, user_idx: &str) -> miette::Result<PathBuf> {
-        let path = if cfg!(target_os = "macos") {
-            PathBuf::from(std::env::var("HOME").into_diagnostic()?)
-                .join("Library")
-                .join("Application Support")
-                .join("Ridibooks")
-                .join("library")
-                .join(format!("_{}", user_idx))
-        } else if cfg!(target_os = "windows") {
-            PathBuf::from(std::env::var("APPDATA").into_diagnostic()?)
-                .join("Ridibooks")
-                .join("library")
-                .join(format!("_{}", user_idx))
-        } else {
-            PathBuf::from(std::env::var("HOME").into_diagnostic()?)
-                .join(".local/share/Ridibooks/library")
-                .join(format!("_{}", user_idx))
-        };
-
-        Ok(path)
-    }
-
     fn calculate_confidence(&self, path: &Path) -> f32 {
-        if !path.exists() || !path.is_dir() {
-            return 0.0;
-        }
-
-        let mut confidence = 0.1;
+        let mut confidence: f32 = 0.1;
 
         if path.join("metadata").exists() {
             confidence += 0.3;
         }
 
-        let mut user_dirs = 0;
-        let mut book_count = 0;
-
         if let Ok(entries) = fs::read_dir(path) {
+            let mut user_dirs = 0;
+            let mut book_count = 0;
+
             for entry in entries.flatten() {
                 let entry_path = entry.path();
-                let name: String = entry.file_name().into_string().unwrap_or_default();
+                let name = entry.file_name().into_string().unwrap_or_default();
 
                 if entry_path.is_dir() && name.starts_with('_') {
                     user_dirs += 1;
@@ -140,13 +125,13 @@ impl LibraryFinder {
                     }
                 }
             }
-        }
 
-        if user_dirs > 0 {
-            confidence += 0.4;
-        }
-        if book_count > 0 {
-            confidence += 0.3;
+            if user_dirs > 0 {
+                confidence += 0.4;
+            }
+            if book_count > 0 {
+                confidence += 0.3;
+            }
         }
 
         confidence.min(1.0)
@@ -158,35 +143,24 @@ impl LibraryFinder {
         }
 
         let mut has_dat = false;
-        let mut has_book = false;
+        let mut has_book_file = false;
 
         if let Ok(entries) = fs::read_dir(path) {
             for entry in entries.flatten() {
                 let entry_path = entry.path();
-                if let Some(ext) = entry_path.extension() {
-                    let ext = ext.to_string_lossy().to_lowercase();
-                    match ext.as_str() {
-                        "dat" => has_dat = true,
-                        "epub" | "pdf" => has_book = true,
-                        _ => {}
+                if entry_path.is_file() {
+                    if let Some(ext) = entry_path.extension() {
+                        let ext_str = ext.to_string_lossy().to_lowercase();
+                        match ext_str.as_str() {
+                            "dat" => has_dat = true,
+                            "epub" | "pdf" => has_book_file = true,
+                            _ => {}
+                        }
                     }
                 }
             }
         }
 
-        has_dat && has_book
+        has_dat && has_book_file
     }
-}
-
-/// Helper functions for platform-specific paths
-fn appdata_path(appdata: &str) -> PathBuf {
-    PathBuf::from(appdata).join("Ridibooks").join("library")
-}
-
-fn home_path(home: &str) -> PathBuf {
-    PathBuf::from(home)
-        .join("Library")
-        .join("Application Support")
-        .join("Ridibooks")
-        .join("library")
 }
