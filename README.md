@@ -1,8 +1,23 @@
+# Ridiculous Enhanced
+
 **Buy from RIDI, Read Anywhere!** - An enhanced command-line tool that extracts your purchased ebooks from [RIDI](https://ridi.com/) and converts them into DRM-free files with batch processing, progress tracking, and advanced features.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Rust](https://img.shields.io/badge/rust-1.70+-orange.svg)](https://www.rust-lang.org)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)](https://github.com/Some-0ne/ridiculous)
+
+## 📋 Prerequisites
+
+Before getting started, make sure you have:
+
+- **Rust 1.70+** - Install from [rustup.rs](https://rustup.rs/)
+- **Git** - For cloning the repository
+- **RIDI Account** - With purchased books you want to decrypt
+- **RIDI App** - Installed with books downloaded locally
+
+### Platform-Specific Requirements
+- **Windows**: No additional requirements
+- **macOS**: Xcode Command Line Tools - `xcode-select --install`
+- **Linux**: Build essentials - `sudo apt install build-essential` (Ubuntu/Debian)
 
 ## ✨ Enhanced Features
 
@@ -40,8 +55,21 @@ Download from [Releases](https://github.com/Some-0ne/ridiculous/releases) and ex
 git clone https://github.com/Some-0ne/ridiculous.git
 cd ridiculous
 
+# Make scripts executable
+chmod +x ./scripts/build.sh
+chmod +x ./scripts/get_ridi_credentials.sh
+
 # Build with the enhanced build script
 ./scripts/build.sh --install
+```
+
+**If you get "Permission denied":**
+```bash
+# Alternative: Run scripts with bash (no permissions needed)
+bash ./scripts/build.sh --install
+
+# Or fix permissions for all scripts at once
+find ./scripts -name "*.sh" -exec chmod +x {} \;
 ```
 
 #### Option C: Using Cargo
@@ -55,6 +83,15 @@ cargo install --git https://github.com/Some-0ne/ridiculous.git
 Run the interactive credential setup script:
 ```bash
 ./scripts/get_ridi_credentials.sh
+```
+
+**If you get "Permission denied":**
+```bash
+# Alternative: Run with bash (no permissions needed)
+bash ./scripts/get_ridi_credentials.sh
+
+# Or fix and run in one command
+chmod +x ./scripts/get_ridi_credentials.sh && ./scripts/get_ridi_credentials.sh
 ```
 
 This script will:
@@ -168,6 +205,18 @@ ridiculous --verbose
 
 ### Common Issues
 
+**Script Permission Errors**
+```bash
+# If ./scripts/get_ridi_credentials.sh gives "Permission denied"
+bash ./scripts/get_ridi_credentials.sh
+
+# If ./scripts/build.sh gives "Permission denied"  
+bash ./scripts/build.sh --install
+
+# Or fix all script permissions at once
+find ./scripts -name "*.sh" -exec chmod +x {} \;
+```
+
 **"No books found"**
 ```bash
 # Check system setup
@@ -184,6 +233,7 @@ ridiculous --device-id "your_id" --user-idx "your_idx" --validate-only
 
 # Re-run credential setup
 ./scripts/get_ridi_credentials.sh
+# Or: bash ./scripts/get_ridi_credentials.sh
 ```
 
 **Processing failures**
@@ -213,15 +263,14 @@ ridiculous --device-id "your_id" --user-idx "your_idx" --verbose
 
 ## 🏗️ Building from Source
 
-### Prerequisites
-- **Rust 1.70+** - Install from [rustup.rs](https://rustup.rs/)
-- **Git** - For cloning the repository
-
 ### Build Process
 ```bash
-# Clone and build
+# Clone and setup
 git clone https://github.com/Some-0ne/ridiculous.git
 cd ridiculous
+
+# Make build script executable
+chmod +x ./scripts/build.sh
 
 # Simple build
 cargo build --release
@@ -234,6 +283,15 @@ cargo test
 
 # Build with GUI support (future feature)
 cargo build --release --features gui
+```
+
+**If build script won't run:**
+```bash
+# Run with bash instead
+bash ./scripts/build.sh --install
+
+# Or fix permissions first
+chmod +x ./scripts/build.sh && ./scripts/build.sh --install
 ```
 
 ### Development
@@ -251,7 +309,6 @@ cargo fmt --check
 cargo clippy
 ```
 
-
 ## ⚖️ Legal Disclaimer
 
 **IMPORTANT**: This tool is for **personal use only** with books you have legally purchased.
@@ -268,9 +325,11 @@ cargo clippy
 
 **Use at your own risk.** The developers assume no responsibility for misuse.
 
-## Acknowledgments
+## 🙏 Acknowledgments
 
 - Original [ridiculous](https://github.com/hsj1/ridiculous) project by hsj1
 - Rust async ecosystem (tokio, etc.)
 
 ---
+
+⭐ **Found this useful?** Give it a star and help others discover DRM-free reading!
