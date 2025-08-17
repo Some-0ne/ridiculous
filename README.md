@@ -325,11 +325,9 @@ cargo clippy
 
 **Use at your own risk.** The developers assume no responsibility for misuse.
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 - Original [ridiculous](https://github.com/hsj1/ridiculous) project by hsj1
 - Rust async ecosystem (tokio, etc.)
 
 ---
-
-⭐ **Found this useful?** Give it a star and help others discover DRM-free reading!
