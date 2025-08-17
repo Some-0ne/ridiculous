@@ -415,37 +415,137 @@ get_device_info() {
     echo
 }
 
-# Enhanced JSON parsing with system detection and device matching
+# Enhanced JSON parsing with better input handling
 parse_with_jq() {
     echo "Great! Let's parse the JSON to find your credentials."
     echo
-    echo "Please copy the ENTIRE JSON response from the browser and paste it here."
+    echo "Please copy the ENTIRE JSON response from the browser."
     echo "Tips:"
     echo "  • Select all with Cmd+A (Mac) or Ctrl+A (Windows/Linux)"
     echo "  • If you see 'null' or '[]', make sure you're logged in"
     echo "  • The JSON should contain device information"
     echo
-    echo "Paste the JSON here, then press Ctrl+D (Unix) or Ctrl+Z (Windows) to finish:"
+    
+    # Offer multiple input methods
+    echo "Choose how to provide the JSON:"
+    echo "1. Paste directly and type 'END' when finished"
+    echo "2. Save JSON to a file and provide the file path"
+    echo "3. Use HERE document method (advanced)"
+    echo
+    read -p "Choose method (1, 2, or 3): " input_method
     
     local json_content=""
-    while IFS= read -r line; do
-        json_content+="$line"$'\n'
-    done
+    
+    case $input_method in
+        1)
+            echo
+            echo "Paste your JSON below, then type 'END' on a new line when finished:"
+            echo "----------------------------------------"
+            
+            while IFS= read -r line; do
+                # Check if user typed END to finish
+                if [[ "$line" == "END" ]] || [[ "$line" == "end" ]]; then
+                    break
+                fi
+                json_content+="$line"$'\n'
+            done
+            ;;
+            
+        2)
+            echo
+            echo "Save your JSON to a temporary file first, then provide the path."
+            echo "Example: /tmp/ridi_devices.json or ~/Desktop/devices.json"
+            echo
+            read -p "Enter the full path to your JSON file: " json_file_path
+            
+            # Expand tilde and handle spaces
+            json_file_path="${json_file_path/#\~/$HOME}"
+            
+            if [[ -f "$json_file_path" ]]; then
+                json_content=$(cat "$json_file_path")
+                echo "✅ Successfully read JSON from file"
+            else
+                print_error "File not found: $json_file_path"
+                echo "Make sure the file exists and the path is correct."
+                return 1
+            fi
+            ;;
+            
+        3)
+            echo
+            echo "Advanced method using HERE document:"
+            echo "1. Type: cat > /tmp/ridi_json.tmp << 'JSONEND'"
+            echo "2. Paste your JSON"
+            echo "3. Type: JSONEND"
+            echo "4. Press Enter to continue here"
+            echo
+            read -p "Press Enter when you've completed the above steps..."
+            
+            if [[ -f "/tmp/ridi_json.tmp" ]]; then
+                json_content=$(cat "/tmp/ridi_json.tmp")
+                echo "✅ Successfully read JSON from temporary file"
+                # Clean up
+                rm -f "/tmp/ridi_json.tmp"
+            else
+                print_error "Temporary file not found"
+                return 1
+            fi
+            ;;
+            
+        *)
+            print_error "Invalid choice"
+            return 1
+            ;;
+    esac
+    
+    echo "----------------------------------------"
     
     if [[ -z "$json_content" ]]; then
         print_error "No JSON content provided"
         return 1
     fi
     
-    # Check if JSON is valid and not empty
-    if ! echo "$json_content" | jq . >/dev/null 2>&1; then
-        print_error "Invalid JSON format"
+    # Show first and last few characters to confirm we got something reasonable
+    local content_length=${#json_content}
+    local preview_start=$(echo "$json_content" | head -c 100)
+    local preview_end=$(echo "$json_content" | tail -c 100)
+    
+    echo "JSON received: $content_length characters"
+    echo "Starts with: ${preview_start}..."
+    echo "Ends with: ...${preview_end}"
+    echo
+    
+    # Check if JSON is valid
+    echo "🔍 Validating JSON format..."
+    if ! echo "$json_content" | jq empty >/dev/null 2>&1; then
+        print_error "Invalid JSON format detected"
+        echo
+        echo "Common issues and solutions:"
+        echo "• Extra text before/after JSON - make sure you copied only the JSON"
+        echo "• Incomplete JSON - ensure you copied everything from { to }"
+        echo "• Special characters - some terminals modify pasted content"
+        echo
+        echo "First 500 characters of what we received:"
+        echo "----------------------------------------"
+        echo "$json_content" | head -c 500
+        echo
+        echo "----------------------------------------"
+        echo "Last 200 characters:"
+        echo "----------------------------------------"
+        echo "$json_content" | tail -c 200
+        echo "----------------------------------------"
+        
         return 1
     fi
     
+    echo "✅ JSON format is valid!"
+    echo
+    
     # Check for common error patterns
-    if echo "$json_content" | grep -q '"result":null\|"result":\[\]'; then
+    if echo "$json_content" | jq -e '.result == null or (.result | length) == 0' >/dev/null 2>&1; then
         print_error "API returned empty result - make sure you're logged in"
+        echo "The API response indicates no devices found."
+        echo "Please ensure you're logged into RIDI in your browser and try again."
         return 1
     fi
     
@@ -1014,4 +1114,3 @@ trap 'echo; print_error "Script interrupted by user"; exit 1' INT
 parse_args "$@"
 
 # Run main script
-main
