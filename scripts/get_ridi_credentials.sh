@@ -1114,3 +1114,5 @@ trap 'echo; print_error "Script interrupted by user"; exit 1' INT
 parse_args "$@"
 
 # Run main script
+main
+        echo "
