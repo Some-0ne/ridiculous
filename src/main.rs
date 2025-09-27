@@ -158,10 +158,10 @@ async fn main() -> miette::Result<()> {
 }
 
 fn print_welcome() {
-    println!("{}", console::style("
-🚀 ═══════════════════════════════════════════════════════════════
-   RIDICULOUS ENHANCED - Smart RIDI Books DRM Removal v0.3.0
-   ═══════════════════════════════════════════════════════════════").cyan().bold());
+    // Using println! instead of console::style since console might not be available
+    println!("🚀 ═══════════════════════════════════════════════════════════════");
+    println!("   RIDICULOUS ENHANCED - Smart RIDI Books DRM Removal v0.3.0");
+    println!("   ═══════════════════════════════════════════════════════════════");
     println!();
 }
 
@@ -448,7 +448,7 @@ async fn run_diagnostics(args: &Args) -> miette::Result<()> {
         }
         
         // Try to find books
-        println!("\\n3. Checking books...");
+        println!("\n3. Checking books...");
         match finder.find_books(&config) {
             Ok(books) => {
                 println!("   📚 Found {} books", books.len());
@@ -462,11 +462,11 @@ async fn run_diagnostics(args: &Args) -> miette::Result<()> {
             Err(e) => println!("   ❌ Error finding books: {}", e),
         }
     } else {
-        println!("\\n2. Credentials not provided - skipping validation");
+        println!("\n2. Credentials not provided - skipping validation");
         println!("   💡 Use --device-id and --user-idx to test credentials");
     }
     
-    println!("\\n🎯 Diagnostics complete!");
+    println!("\n🎯 Diagnostics complete!");
     Ok(())
 }
 
@@ -503,7 +503,7 @@ fn load_or_create_config(args: &Args) -> miette::Result<Config> {
     // Validate required fields
     if config.device_id.is_empty() || config.user_idx.is_empty() {
         return Err(miette!(
-            "Missing credentials. Run with --device-id and --user-idx or use config file.\\n\\
+            "Missing credentials. Run with --device-id and --user-idx or use config file.\n\
              Get credentials from: https://account.ridibooks.com/api/user-devices/app"
         ));
     }
@@ -539,15 +539,15 @@ fn save_processing_state(state: &ProcessingState) -> Result<()> {
 }
 
 fn print_summary(state: &ProcessingState) {
-    println!("\\n📊 Processing Summary:");
+    println!("\n📊 Processing Summary:");
     println!("   ✅ Completed: {}", state.completed.len());
     println!("   ❌ Failed: {}", state.failed.len());
     
     if !state.failed.is_empty() {
-        println!("\\n❌ Failed books:");
+        println!("\n❌ Failed books:");
         for (book_id, error) in &state.failed {
             println!("   - {}: {}", book_id, error);
         }
-        println!("\\n💡 Use --resume to retry failed books");
+        println!("\n💡 Use --resume to retry failed books");
     }
 }
