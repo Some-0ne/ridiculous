@@ -27,7 +27,7 @@ readonly TEMP_JSON="/tmp/ridi_devices_$$.json"
 print_header() {
     clear
     echo -e "${CYAN}${BOLD}╔═══════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}${BOLD}║   RIDI Credential Helper - Smart Extraction      ║${NC}"
+    echo -e "${CYAN}${BOLD}║   RIDI Credential Helper - Smart Extraction       ║${NC}"
     echo -e "${CYAN}${BOLD}╚═══════════════════════════════════════════════════╝${NC}"
     echo
 }

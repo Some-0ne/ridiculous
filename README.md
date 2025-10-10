@@ -21,7 +21,7 @@ Before getting started, make sure you have:
 
 ## ✨ Enhanced Features
 
-### 🔥 New Capabilities
+### 🔥 Capabilities
 - **📚 Batch Processing**: Process multiple books simultaneously with configurable parallelism
 - **📊 Progress Tracking**: Real-time progress bars and detailed status reporting  
 - **🔄 Resume Support**: Continue from where you left off if processing is interrupted
@@ -108,58 +108,10 @@ This script will:
 ### 3. Process Your Books
 
 ```bash
-# Simple usage (uses saved config)
-ridiculous --device-id "your_device_id" --user-idx "your_user_idx"
-
-# Batch mode with parallel processing
-ridiculous --device-id "your_device_id" --user-idx "your_user_idx" --batch-mode --parallel 4
-
-# With verbose output
-ridiculous --device-id "your_device_id" --user-idx "your_user_idx" --verbose
+#Use this generally to get your books
+cargo run
 ```
 
-## 📋 Command Line Options
-
-| Option | Description |
-|--------|-------------|
-| `-d, --device-id <ID>` | Your RIDI device ID (required) |
-| `-u, --user-idx <IDX>` | Your RIDI user index (required) |
-| `-v, --verbose` | Enable verbose output with detailed progress |
-| `--diagnose` | Run system diagnostics and show configuration |
-| `--validate-only` | Validate credentials without processing books |
-| `--batch-mode` | Process all books in parallel batch mode |
-| `--parallel <N>` | Number of parallel workers (default: 4) |
-| `--resume` | Resume from previous interrupted session |
-| `--force` | Re-process all books (ignore already decrypted) |
-| `-o, --output-dir <DIR>` | Custom output directory |
-| `--organize` | Create organized folder structure |
-| `--config-path <PATH>` | Custom config file path |
-
-## 💡 Usage Examples
-
-### Basic Operations
-```bash
-# First time setup with diagnostics
-ridiculous --device-id "abc123..." --user-idx "12345" --diagnose
-
-# Process books with progress tracking
-ridiculous --device-id "abc123..." --user-idx "12345" --verbose
-
-# Fast batch processing
-ridiculous --device-id "abc123..." --user-idx "12345" --batch-mode --parallel 8
-```
-
-### Advanced Features
-```bash
-# Resume interrupted processing
-ridiculous --device-id "abc123..." --user-idx "12345" --resume
-
-# Force re-decrypt all books
-ridiculous --device-id "abc123..." --user-idx "12345" --force
-
-# Organized output with custom directory
-ridiculous --device-id "abc123..." --user-idx "12345" --output-dir ~/MyBooks --organize
-```
 
 ### Troubleshooting
 ```bash
