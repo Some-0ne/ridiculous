@@ -1,36 +1,50 @@
 #!/bin/bash
 
-# Simplified RIDI Device ID Helper
-# Automates credential extraction with minimal user interaction
+# RIDI Credential Helper - Optimized & Efficient
+# Automatically extracts RIDI credentials with maximum automation
 
 set -e
 
 # Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-BOLD='\033[1m'
-NC='\033[0m'
+readonly RED='\033[0;31m'
+readonly GREEN='\033[0;32m'
+readonly YELLOW='\033[1;33m'
+readonly BLUE='\033[0;34m'
+readonly CYAN='\033[0;36m'
+readonly BOLD='\033[1m'
+readonly NC='\033[0m'
 
-# Auto-fix permissions
-if [[ ! -x "$0" ]]; then
-    chmod +x "$0" 2>/dev/null && exec "$0" "$@" || echo "Warning: Could not make script executable"
-fi
+# Constants
+readonly API_URL="https://account.ridibooks.com/api/user-devices/app"
+readonly LOGIN_URL="https://ridibooks.com/account/login"
+readonly CONFIG_FILE="$HOME/.ridiculous.toml"
+readonly TEMP_JSON="/tmp/ridi_devices_$$.json"
 
+# Auto-fix permissions on first run
+[[ ! -x "$0" ]] && chmod +x "$0" 2>/dev/null && exec "$0" "$@"
+
+# Utility functions
 print_header() {
     clear
-    echo -e "${CYAN}${BOLD}RIDI Credential Helper (Simplified)${NC}"
-    echo "======================================"
+    echo -e "${CYAN}${BOLD}╔═══════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}${BOLD}║   RIDI Credential Helper - Smart Extraction      ║${NC}"
+    echo -e "${CYAN}${BOLD}╚═══════════════════════════════════════════════════╝${NC}"
     echo
 }
 
 print_success() { echo -e "${GREEN}✅ $1${NC}"; }
 print_error() { echo -e "${RED}❌ $1${NC}"; }
 print_info() { echo -e "${BLUE}ℹ️  $1${NC}"; }
+print_warning() { echo -e "${YELLOW}⚠️  $1${NC}"; }
+print_step() { echo -e "${CYAN}${BOLD}➤ $1${NC}"; }
 
-# Validate formats
+# Cleanup on exit
+cleanup() {
+    rm -f "$TEMP_JSON" "/tmp/ridi_cookies_$$"* 2>/dev/null
+}
+trap cleanup EXIT
+
+# Validation functions
 validate_device_id() {
     [[ "$1" =~ ^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$ ]] || \
     [[ "$1" =~ ^[a-fA-F0-9]{32}$ ]] || \
@@ -41,340 +55,472 @@ validate_user_idx() {
     [[ "$1" =~ ^[0-9]{6,15}$ ]]
 }
 
-# Try to use curl to get JSON automatically
-try_auto_fetch() {
-    local api_url="https://account.ridibooks.com/api/user-devices/app"
+validate_json() {
+    local file="$1"
+    [[ -f "$file" ]] && [[ -s "$file" ]] && grep -q "device_id" "$file" 2>/dev/null
+}
+
+# Browser detection
+detect_os() {
+    case "$(uname -s)" in
+        Darwin*) echo "macos" ;;
+        Linux*) echo "linux" ;;
+        MINGW*|MSYS*|CYGWIN*) echo "windows" ;;
+        *) echo "unknown" ;;
+    esac
+}
+
+# Smart URL opener
+open_url() {
+    local url="$1"
+    local os=$(detect_os)
     
-    print_info "Attempting to fetch device info automatically..."
+    case "$os" in
+        macos) open "$url" 2>/dev/null ;;
+        linux) xdg-open "$url" 2>/dev/null || sensible-browser "$url" 2>/dev/null ;;
+        windows) start "$url" 2>/dev/null ;;
+    esac
+}
+
+# Check if curl has valid session
+check_existing_session() {
+    print_step "Checking for existing RIDI session..."
     
-    # Try different approaches to get cookies
-    local cookie_file="/tmp/ridi_cookies.txt"
+    if ! command -v curl &> /dev/null; then
+        print_warning "curl not found, skipping session check"
+        return 1
+    fi
     
-    # Method 1: Try to extract cookies from browsers
-    local browsers=("Chrome" "Safari" "Firefox")
-    for browser in "${browsers[@]}"; do
-        if extract_browser_cookies "$browser" "$cookie_file"; then
-            print_info "Found cookies from $browser"
-            if fetch_with_cookies "$api_url" "$cookie_file"; then
+    local response=$(curl -sL -w "\n%{http_code}" "$API_URL" 2>/dev/null | tail -1)
+    
+    if [[ "$response" == "200" ]]; then
+        curl -sL "$API_URL" > "$TEMP_JSON" 2>/dev/null
+        if validate_json "$TEMP_JSON"; then
+            print_success "Found existing session!"
+            return 0
+        fi
+    fi
+    
+    return 1
+}
+
+# Try to fetch with browser cookies (cross-platform)
+try_browser_cookies() {
+    print_step "Attempting to use browser cookies..."
+    
+    local os=$(detect_os)
+    local found=false
+    
+    case "$os" in
+        macos)
+            # Try Chrome
+            if try_chrome_cookies_macos; then
+                found=true
+            # Try Safari
+            elif try_safari_cookies_macos; then
+                found=true
+            fi
+            ;;
+        linux)
+            if try_chrome_cookies_linux; then
+                found=true
+            elif try_firefox_cookies_linux; then
+                found=true
+            fi
+            ;;
+    esac
+    
+    [[ "$found" == true ]]
+}
+
+try_chrome_cookies_macos() {
+    local chrome_cookies="$HOME/Library/Application Support/Google/Chrome/Default/Cookies"
+    [[ ! -f "$chrome_cookies" ]] && return 1
+    
+    command -v sqlite3 &> /dev/null || return 1
+    
+    local cookie_file="/tmp/ridi_cookies_$$"
+    
+    # Extract RIDI-related cookies
+    sqlite3 "$chrome_cookies" <<EOF 2>/dev/null | grep -v "^$" > "$cookie_file" || return 1
+.mode tabs
+.headers off
+SELECT name || '=' || value
+FROM cookies 
+WHERE (host_key LIKE '%ridibooks%' OR host_key LIKE '%ridi%')
+AND expires_utc > $(date +%s)000000;
+EOF
+    
+    [[ -s "$cookie_file" ]] || return 1
+    
+    # Try to fetch with cookies
+    if curl -sL -b "$cookie_file" "$API_URL" -o "$TEMP_JSON" 2>/dev/null; then
+        if validate_json "$TEMP_JSON"; then
+            print_success "Retrieved data using Chrome cookies"
+            return 0
+        fi
+    fi
+    
+    return 1
+}
+
+try_chrome_cookies_linux() {
+    local chrome_paths=(
+        "$HOME/.config/google-chrome/Default/Cookies"
+        "$HOME/.config/chromium/Default/Cookies"
+        "$HOME/snap/chromium/common/chromium/Default/Cookies"
+    )
+    
+    for chrome_cookies in "${chrome_paths[@]}"; do
+        [[ -f "$chrome_cookies" ]] || continue
+        command -v sqlite3 &> /dev/null || continue
+        
+        local cookie_file="/tmp/ridi_cookies_$$"
+        
+        sqlite3 "$chrome_cookies" <<EOF 2>/dev/null | grep -v "^$" > "$cookie_file" || continue
+.mode tabs
+.headers off
+SELECT name || '=' || value
+FROM cookies 
+WHERE (host_key LIKE '%ridibooks%' OR host_key LIKE '%ridi%')
+AND expires_utc > $(date +%s)000000;
+EOF
+        
+        [[ -s "$cookie_file" ]] || continue
+        
+        if curl -sL -b "$cookie_file" "$API_URL" -o "$TEMP_JSON" 2>/dev/null; then
+            if validate_json "$TEMP_JSON"; then
+                print_success "Retrieved data using Chrome cookies"
                 return 0
             fi
         fi
     done
     
-    # Method 2: Guide user through simple cookie export
-    echo
-    echo "Let's try a simple approach:"
-    echo "1. Open https://ridibooks.com and log in"
-    echo "2. Press F12 to open developer tools"
-    echo "3. Go to Application/Storage tab"
-    echo "4. Click 'Cookies' > 'https://ridibooks.com'"
-    echo "5. Look for a cookie named 'ridi_session' or similar"
-    echo
-    read -p "Do you see any RIDI-related cookies? (y/n): " has_cookies
+    return 1
+}
+
+try_firefox_cookies_linux() {
+    local firefox_dir="$HOME/.mozilla/firefox"
+    [[ ! -d "$firefox_dir" ]] && return 1
     
-    if [[ "$has_cookies" =~ ^[Yy] ]]; then
-        echo "Copy the cookie value (the long string after the = sign)"
-        read -p "Paste cookie value here: " cookie_value
-        
-        if [[ -n "$cookie_value" ]]; then
-            echo "ridi_session=$cookie_value" > "$cookie_file"
-            fetch_with_cookies "$api_url" "$cookie_file"
-            return $?
+    local profile=$(find "$firefox_dir" -maxdepth 1 -name "*.default*" -type d | head -1)
+    [[ -z "$profile" ]] && return 1
+    
+    local cookies_db="$profile/cookies.sqlite"
+    [[ ! -f "$cookies_db" ]] && return 1
+    
+    command -v sqlite3 &> /dev/null || return 1
+    
+    local cookie_file="/tmp/ridi_cookies_$$"
+    
+    sqlite3 "$cookies_db" <<EOF 2>/dev/null | grep -v "^$" > "$cookie_file" || return 1
+.mode tabs
+.headers off
+SELECT name || '=' || value
+FROM moz_cookies 
+WHERE (host LIKE '%ridibooks%' OR host LIKE '%ridi%')
+AND expiry > $(date +%s);
+EOF
+    
+    [[ -s "$cookie_file" ]] || return 1
+    
+    if curl -sL -b "$cookie_file" "$API_URL" -o "$TEMP_JSON" 2>/dev/null; then
+        if validate_json "$TEMP_JSON"; then
+            print_success "Retrieved data using Firefox cookies"
+            return 0
         fi
     fi
     
     return 1
 }
 
-# Extract cookies from browser (macOS specific)
-extract_browser_cookies() {
-    local browser="$1"
-    local output_file="$2"
-    
-    case "$browser" in
-        "Chrome")
-            local chrome_cookies="$HOME/Library/Application Support/Google/Chrome/Default/Cookies"
-            if [[ -f "$chrome_cookies" ]] && command -v sqlite3 &> /dev/null; then
-                sqlite3 "$chrome_cookies" \
-                    "SELECT name, value FROM cookies WHERE host_key LIKE '%ridibooks%' OR host_key LIKE '%account.ridibooks%';" \
-                    2>/dev/null | while IFS='|' read -r name value; do
-                    echo "$name=$value" >> "$output_file"
-                done
-                [[ -s "$output_file" ]]
-            fi
-            ;;
-        "Safari")
-            # Safari cookies are more complex to extract
-            return 1
-            ;;
-        "Firefox")
-            # Firefox uses different cookie format
-            return 1
-            ;;
-    esac
-}
-
-# Fetch JSON using cookies
-fetch_with_cookies() {
-    local url="$1"
-    local cookie_file="$2"
-    local output_file="/tmp/ridi_devices.json"
-    
-    if command -v curl &> /dev/null; then
-        if curl -s -b "$cookie_file" "$url" -o "$output_file" 2>/dev/null; then
-            if [[ -s "$output_file" ]] && grep -q "device_id" "$output_file" 2>/dev/null; then
-                print_success "Successfully fetched device information!"
-                parse_json_file "$output_file"
-                return 0
-            fi
-        fi
-    fi
+try_safari_cookies_macos() {
+    # Safari cookies are in binary format and harder to extract
+    # For now, return false
     return 1
 }
 
-# Parse JSON file and extract credentials
-parse_json_file() {
+# Parse JSON and extract credentials
+parse_and_save() {
     local json_file="$1"
     
+    print_step "Parsing device information..."
+    
+    # Try jq first (best method)
     if command -v jq &> /dev/null; then
-        parse_with_jq_file "$json_file"
-    else
-        parse_with_regex "$json_file"
+        parse_with_jq "$json_file"
+        return $?
     fi
+    
+    # Fallback to python
+    if command -v python3 &> /dev/null; then
+        parse_with_python "$json_file"
+        return $?
+    fi
+    
+    # Last resort: regex
+    parse_with_regex "$json_file"
 }
 
-parse_with_jq_file() {
+parse_with_jq() {
     local json_file="$1"
-    local found_devices=false
+    local device_count=0
+    local best_device_id=""
+    local best_user_idx=""
+    local best_name=""
     
     echo
-    echo -e "${BLUE}Available Devices:${NC}"
-    echo "===================="
+    echo -e "${BLUE}${BOLD}Available Devices:${NC}"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     
-    local device_count=1
     while IFS=$'\t' read -r device_id user_idx device_name os; do
         if [[ -n "$device_id" && -n "$user_idx" ]]; then
-            found_devices=true
-            echo -e "${CYAN}$device_count.${NC} ${BOLD}${device_name:-Unknown Device}${NC} [$os]"
-            echo "   Device ID: $device_id"
-            echo "   User Index: $user_idx"
+            ((device_count++))
             
-            # Auto-validate
-            local valid_device=false
-            local valid_user=false
+            echo -e "${CYAN}Device $device_count:${NC} ${BOLD}${device_name:-Unknown}${NC} [$os]"
+            echo "  Device ID : $device_id"
+            echo "  User Index: $user_idx"
             
+            local valid=true
             if validate_device_id "$device_id"; then
-                echo -e "   ${GREEN}✓ Device ID format: Valid${NC}"
-                valid_device=true
+                echo -e "  ${GREEN}✓ Device ID: Valid${NC}"
             else
-                echo -e "   ${YELLOW}⚠ Device ID format: Unusual${NC}"
+                echo -e "  ${YELLOW}⚠ Device ID: Unusual format${NC}"
+                valid=false
             fi
             
             if validate_user_idx "$user_idx"; then
-                echo -e "   ${GREEN}✓ User Index format: Valid${NC}"
-                valid_user=true
+                echo -e "  ${GREEN}✓ User Index: Valid${NC}"
             else
-                echo -e "   ${YELLOW}⚠ User Index format: Unusual${NC}"
+                echo -e "  ${YELLOW}⚠ User Index: Unusual format${NC}"
+                valid=false
             fi
             
-            if [[ "$valid_device" == true && "$valid_user" == true ]]; then
-                echo -e "   ${GREEN}${BOLD}⭐ RECOMMENDED${NC}"
-                
-                # Auto-save first valid set
-                if [[ $device_count -eq 1 ]]; then
-                    save_credentials "$device_id" "$user_idx" "$device_name"
-                fi
+            # Use first valid device
+            if [[ -z "$best_device_id" && "$valid" == true ]]; then
+                best_device_id="$device_id"
+                best_user_idx="$user_idx"
+                best_name="$device_name"
+                echo -e "  ${GREEN}${BOLD}⭐ SELECTED${NC}"
             fi
             
             echo
-            ((device_count++))
         fi
     done < <(jq -r '.result[]? | select(.device_id and .user_idx) | [.device_id, .user_idx, (.device_name // "Unknown"), (.os // "Unknown")] | @tsv' "$json_file" 2>/dev/null)
     
-    if [[ "$found_devices" == false ]]; then
-        print_error "No devices found in JSON"
+    if [[ $device_count -eq 0 ]]; then
+        print_error "No valid devices found in response"
         return 1
     fi
     
-    return 0
+    if [[ -n "$best_device_id" ]]; then
+        save_config "$best_device_id" "$best_user_idx" "$best_name"
+        return 0
+    fi
+    
+    return 1
 }
 
-# Regex-based parsing fallback
+parse_with_python() {
+    local json_file="$1"
+    
+    local result=$(python3 <<EOF 2>/dev/null
+import json
+import sys
+
+try:
+    with open('$json_file', 'r') as f:
+        data = json.load(f)
+    
+    if 'result' in data and len(data['result']) > 0:
+        device = data['result'][0]
+        if 'device_id' in device and 'user_idx' in device:
+            print(f"{device['device_id']}\t{device['user_idx']}\t{device.get('device_name', 'Unknown')}")
+            sys.exit(0)
+except:
+    pass
+
+sys.exit(1)
+EOF
+)
+    
+    if [[ -n "$result" ]]; then
+        IFS=$'\t' read -r device_id user_idx device_name <<< "$result"
+        print_success "Found device: $device_name"
+        save_config "$device_id" "$user_idx" "$device_name"
+        return 0
+    fi
+    
+    return 1
+}
+
 parse_with_regex() {
     local json_file="$1"
     local content=$(cat "$json_file")
     
-    echo "Parsing without jq..."
+    # Extract first device_id and user_idx
+    local device_id=$(echo "$content" | grep -oE '"device_id"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | grep -oE '[a-fA-F0-9-]{20,50}')
+    local user_idx=$(echo "$content" | grep -oE '"user_idx"[[:space:]]*:[[:space:]]*"?[0-9]+"?' | head -1 | grep -oE '[0-9]{6,15}')
     
-    # Extract device IDs
-    local device_ids=($(echo "$content" | grep -oE '"device_id":\s*"[^"]*"' | grep -oE '[a-fA-F0-9-]{20,50}' | head -5))
-    local user_indices=($(echo "$content" | grep -oE '"user_idx":\s*"?[0-9]+"?' | grep -oE '[0-9]{6,15}' | head -5))
-    
-    if [[ ${#device_ids[@]} -gt 0 && ${#user_indices[@]} -gt 0 ]]; then
-        echo
-        echo "Found credentials:"
-        echo "Device ID: ${device_ids[0]}"
-        echo "User Index: ${user_indices[0]}"
-        
-        save_credentials "${device_ids[0]}" "${user_indices[0]}" "Auto-detected"
+    if [[ -n "$device_id" && -n "$user_idx" ]]; then
+        print_success "Extracted credentials using regex"
+        save_config "$device_id" "$user_idx" "Auto-detected"
         return 0
     fi
     
     return 1
 }
 
-# Save credentials to config
-save_credentials() {
+# Save configuration
+save_config() {
     local device_id="$1"
-    local user_idx="$2" 
+    local user_idx="$2"
     local device_name="$3"
     
-    echo
-    print_info "Saving credentials..."
+    print_step "Saving configuration..."
     
-    local config_file="$HOME/.ridiculous.toml"
-    
-    # Backup existing
-    if [[ -f "$config_file" ]]; then
-        cp "$config_file" "$config_file.backup.$(date +%s)" 2>/dev/null
+    # Backup existing config
+    if [[ -f "$CONFIG_FILE" ]]; then
+        local backup="$CONFIG_FILE.backup.$(date +%s)"
+        cp "$CONFIG_FILE" "$backup" 2>/dev/null
+        print_info "Backed up existing config to: $backup"
     fi
     
-    cat > "$config_file" << EOF
+    # Create new config
+    cat > "$CONFIG_FILE" << EOF
 # RIDI Credentials - Auto-generated
 # Device: $device_name
-# Generated: $(date)
+# Generated: $(date '+%Y-%m-%d %H:%M:%S')
 
 device_id = "$device_id"
 user_idx = "$user_idx"
 verbose = false
+organize_output = false
 EOF
 
-    if [[ -f "$config_file" ]]; then
-        print_success "Saved to $config_file"
-        print_success "Setup complete! You can now run: ridiculous"
+    if [[ -f "$CONFIG_FILE" ]]; then
+        print_success "Configuration saved to: $CONFIG_FILE"
+        echo
+        echo -e "${GREEN}${BOLD}✨ Setup Complete!${NC}"
+        echo
+        echo "You can now run your decryption tool:"
+        echo -e "  ${CYAN}cargo run${NC}"
+        echo -e "  ${CYAN}cargo run -- --verbose${NC} (for detailed output)"
+        echo -e "  ${CYAN}cargo run -- --batch-mode${NC} (for batch processing)"
+        return 0
     else
-        print_error "Could not save config file"
+        print_error "Failed to save configuration"
+        return 1
     fi
 }
 
-# Fallback: Simple manual entry
-simple_manual_entry() {
+# Manual entry fallback
+manual_entry() {
     echo
-    echo -e "${YELLOW}Manual Entry Mode${NC}"
-    echo "=================="
+    print_step "Manual Entry Mode"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo
-    echo "Please open this URL and log in:"
-    echo -e "${CYAN}https://account.ridibooks.com/api/user-devices/app${NC}"
+    print_info "Opening device API page in your browser..."
+    open_url "$API_URL"
     echo
-    echo "Look for patterns like:"
+    echo "In your browser, you'll see JSON data containing:"
+    echo
+    echo -e "${YELLOW}Example format:${NC}"
     echo '  "device_id": "12345678-abcd-1234-5678-123456789abc"'
     echo '  "user_idx": "12345678"'
     echo
     
+    # Wait a moment for browser to open
+    sleep 2
+    
+    # Get device_id
+    local device_id=""
     while true; do
-        read -p "Enter your device_id: " device_id
-        device_id=$(echo "$device_id" | tr -d '"' | tr -d ' ' | tr -d ',')
+        read -p "Enter device_id: " device_id
+        device_id=$(echo "$device_id" | tr -d '"' | tr -d ' ' | tr -d ',' | tr -d ':' | sed 's/device_id//g')
         
-        if [[ -n "$device_id" ]] && validate_device_id "$device_id"; then
-            print_success "Device ID looks good"
-            break
-        elif [[ -n "$device_id" ]]; then
-            echo "Device ID format seems unusual, but continuing..."
-            break
-        else
-            echo "Please enter a device ID"
-        fi
-    done
-    
-    while true; do
-        read -p "Enter your user_idx: " user_idx
-        user_idx=$(echo "$user_idx" | tr -d '"' | tr -d ' ' | tr -d ',')
-        
-        if [[ -n "$user_idx" ]] && validate_user_idx "$user_idx"; then
-            print_success "User index looks good"
-            break
-        elif [[ -n "$user_idx" ]]; then
-            echo "User index format seems unusual, but continuing..."
-            break
-        else
-            echo "Please enter a user index"
-        fi
-    done
-    
-    save_credentials "$device_id" "$user_idx" "Manual Entry"
-}
-
-# Open URL helper
-open_url() {
-    local url="$1"
-    if command -v open &> /dev/null; then
-        open "$url" 2>/dev/null
-    elif command -v xdg-open &> /dev/null; then
-        xdg-open "$url" 2>/dev/null
-    elif command -v start &> /dev/null; then
-        start "$url" 2>/dev/null
-    fi
-}
-
-# Check if user is already logged in by trying to access API
-check_login_status() {
-    local api_url="https://account.ridibooks.com/api/user-devices/app"
-    print_info "Checking if you're logged in..."
-    
-    if command -v curl &> /dev/null; then
-        local response=$(curl -s "$api_url" 2>/dev/null || echo "")
-        if echo "$response" | grep -q "device_id" 2>/dev/null; then
-            print_success "You're already logged in!"
-            echo "$response" > "/tmp/ridi_devices.json"
-            if parse_json_file "/tmp/ridi_devices.json"; then
-                return 0
+        if [[ -n "$device_id" ]]; then
+            if validate_device_id "$device_id"; then
+                print_success "Device ID validated"
+            else
+                print_warning "Unusual format, but continuing..."
             fi
+            break
         fi
-    fi
-    return 1
+        print_error "Please enter a valid device ID"
+    done
+    
+    # Get user_idx
+    local user_idx=""
+    while true; do
+        read -p "Enter user_idx: " user_idx
+        user_idx=$(echo "$user_idx" | tr -d '"' | tr -d ' ' | tr -d ',' | tr -d ':' | sed 's/user_idx//g')
+        
+        if [[ -n "$user_idx" ]]; then
+            if validate_user_idx "$user_idx"; then
+                print_success "User index validated"
+            else
+                print_warning "Unusual format, but continuing..."
+            fi
+            break
+        fi
+        print_error "Please enter a valid user index"
+    done
+    
+    save_config "$device_id" "$user_idx" "Manual Entry"
 }
 
-# Main function
+# Main execution
 main() {
     print_header
     
-    echo "This script will automatically find your RIDI credentials."
-    echo
+    # Check if already configured
+    if [[ -f "$CONFIG_FILE" ]] && grep -q "device_id" "$CONFIG_FILE" 2>/dev/null; then
+        print_info "Configuration file already exists: $CONFIG_FILE"
+        read -p "Do you want to reconfigure? (y/N): " reconfigure
+        if [[ ! "$reconfigure" =~ ^[Yy] ]]; then
+            print_success "Using existing configuration"
+            exit 0
+        fi
+        echo
+    fi
     
-    # First try: Check if already logged in and can get data directly
-    if check_login_status; then
+    # Strategy 1: Check for existing session
+    if check_existing_session && parse_and_save "$TEMP_JSON"; then
         return 0
     fi
     
-    echo "You need to be logged into RIDI first."
-    echo "Opening RIDI login page..."
-    echo
+    # Strategy 2: Try browser cookies
+    if try_browser_cookies && parse_and_save "$TEMP_JSON"; then
+        return 0
+    fi
     
-    # Open login page
-    open_url "https://ridibooks.com/account/login"
-    
-    echo "Please log in to your RIDI account in the browser that just opened."
+    # Strategy 3: Guide user to log in
     echo
+    print_info "Automatic methods didn't work. Let's log you in..."
+    echo
+    print_info "Opening RIDI login page..."
+    open_url "$LOGIN_URL"
+    echo
+    echo "Please log in to your RIDI account in the browser."
     read -p "Press Enter after you've logged in..."
-    
     echo
     
-    # Try automatic methods
-    if try_auto_fetch; then
-        print_success "Automatic credential extraction successful!"
+    # Try session check again after login
+    sleep 2
+    if check_existing_session && parse_and_save "$TEMP_JSON"; then
         return 0
     fi
     
-    # Fallback to manual
-    echo
-    print_info "Automatic method didn't work, trying manual entry..."
+    # Strategy 4: Try cookies again after login
+    if try_browser_cookies && parse_and_save "$TEMP_JSON"; then
+        return 0
+    fi
     
-    # Open the API endpoint for them
-    print_info "Opening device API page..."
-    open_url "https://account.ridibooks.com/api/user-devices/app"
-    
-    simple_manual_entry
+    # Final fallback: Manual entry
+    print_warning "Automatic extraction failed. Falling back to manual entry."
+    manual_entry
 }
 
-# Run the script
-main
+# Run
+main "$@"
