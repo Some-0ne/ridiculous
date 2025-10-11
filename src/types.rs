@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::ffi::OsString;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]  // ← Added this for automatic defaults on missing fields
 pub struct Config {
     pub device_id: String,
     pub user_idx: String,
@@ -106,6 +107,7 @@ impl BookInfo {
         output_path.exists()
     }
     
+    #[allow(dead_code)]  // ← Silences the warning
     pub fn format_file_size(&self) -> String {
         match std::fs::metadata(&self.get_book_file_path()) {
             Ok(metadata) => {
@@ -127,10 +129,12 @@ impl BookInfo {
 pub enum BookFormat {
     Epub,
     Pdf,
+    #[allow(dead_code)]  // ← Silences the warning
     Unknown,
 }
 
 impl BookFormat {
+    #[allow(dead_code)]  // ← Silences the warning
     pub fn from_extension(ext: &str) -> Self {
         match ext.to_lowercase().as_str() {
             "epub" => BookFormat::Epub,
@@ -152,10 +156,12 @@ impl BookFormat {
 pub struct LibraryLocation {
     pub path: PathBuf,
     pub confidence: f32,
+    #[allow(dead_code)]  // ← Silences the warning
     pub source: LibrarySource,
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)]  // ← Silences all warnings for this enum
 pub enum LibrarySource {
     Registry,
     CommonPath,
@@ -165,6 +171,7 @@ pub enum LibrarySource {
 
 // Error handling
 #[derive(Debug)]
+#[allow(dead_code)]  // ← Silences all warnings for this enum
 pub enum ProcessingError {
     IoError(std::io::Error),
     DecryptionError(String),

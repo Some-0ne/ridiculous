@@ -237,29 +237,10 @@ cargo test
 cargo build --release --features gui
 ```
 
-**If build script won't run:**
-```bash
-# Run with bash instead
-bash ./scripts/build.sh --install
 
-# Or fix permissions first
-chmod +x ./scripts/build.sh && ./scripts/build.sh --install
-```
+### Finding and understanding your IDs'
 
-### Development
-```bash
-# Run with debug output
-cargo run -- --device-id "your_id" --user-idx "your_idx" --verbose
 
-# Run tests
-cargo test
-
-# Check code format
-cargo fmt --check
-
-# Run linter
-cargo clippy
-```
 
 ## ⚖️ Legal Disclaimer
 
