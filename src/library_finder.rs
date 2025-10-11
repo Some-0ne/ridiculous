@@ -61,31 +61,109 @@ impl LibraryFinder {
     }
     
     pub fn find_books(&self, config: &Config) -> miette::Result<Vec<BookInfo>> {
-        // Find library path using user_idx
-        let library_path = self.get_library_path(&config.user_idx)?;
+        // Try to find library path using user_idx
+        let library_paths = self.get_library_paths(&config.user_idx)?;
         
-        if !library_path.exists() {
+        let mut books = Vec::new();
+        let mut checked_paths = Vec::new();
+        
+        // Try each potential library path
+        for library_path in library_paths {
+            checked_paths.push(library_path.display().to_string());
+            
+            if !library_path.exists() {
+                if config.verbose {
+                    eprintln!("⚠️  Path doesn't exist: {}", library_path.display());
+                }
+                continue;
+            }
+            
+            if config.verbose {
+                println!("🔍 Scanning: {}", library_path.display());
+            }
+            
+            // Scan the library directory for book folders
+            match fs::read_dir(&library_path) {
+                Ok(entries) => {
+                    for entry in entries {
+                        let entry = match entry {
+                            Ok(e) => e,
+                            Err(_) => continue,
+                        };
+                        let path = entry.path();
+                        
+                        if path.is_dir() {
+                            // Check if this directory contains book files
+                            if self.is_book_directory(&path) {
+                                if config.verbose {
+                                    println!("📖 Found book directory: {}", path.display());
+                                }
+                                match BookInfo::new(path) {
+                                    Ok(book) => books.push(book),
+                                    Err(e) => {
+                                        if config.verbose {
+                                            eprintln!("⚠️  Failed to process book directory: {}", e);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    // If we found books in this path, no need to check others
+                    if !books.is_empty() {
+                        break;
+                    }
+                }
+                Err(e) => {
+                    if config.verbose {
+                        eprintln!("⚠️  Cannot read directory {}: {}", library_path.display(), e);
+                    }
+                }
+            }
+        }
+        
+        if books.is_empty() {
             return Err(miette!(
-                "RIDI library not found at: {}\nMake sure RIDI is installed and books are downloaded", 
-                library_path.display()
+                "No books found in any library location.\n\
+                 Checked paths:\n{}\n\n\
+                 Make sure:\n\
+                 1. RIDI app is installed\n\
+                 2. You've downloaded books in the RIDI app\n\
+                 3. Books are in one of the above locations",
+                checked_paths.join("\n")
             ));
         }
         
-        let mut books = Vec::new();
+        Ok(books)
+    }
+    
+    fn get_library_paths(&self, user_idx: &str) -> miette::Result<Vec<PathBuf>> {
+        let mut paths = Vec::new();
         
-        // Scan the library directory for book folders
-        for entry in fs::read_dir(&library_path).into_diagnostic()? {
-            let entry = entry.into_diagnostic()?;
-            let path = entry.path();
+        #[cfg(target_os = "macos")]
+        {
+            let base = PathBuf::from(std::env::var("HOME").into_diagnostic()?)
+                .join("Library")
+                .join("Application Support")
+                .join("Ridibooks")
+                .join("library");
             
-            if path.is_dir() {
-                // Check if this directory contains book files
-                if self.is_book_directory(&path) {
-                    match BookInfo::new(path) {
-                        Ok(book) => books.push(book),
-                        Err(e) => {
-                            if config.verbose {
-                                eprintln!("Warning: Failed to process book directory: {}", e);
+            // Try with _{user_idx} subdirectory first
+            paths.push(base.join(format!("_{}", user_idx)));
+            // Then try the base library directory
+            paths.push(base.clone());
+            // Also try scanning for any user directories
+            if base.exists() {
+                if let Ok(entries) = fs::read_dir(&base) {
+                    for entry in entries.flatten() {
+                        let path = entry.path();
+                        if path.is_dir() {
+                            let name = path.file_name()
+                                .and_then(|n| n.to_str())
+                                .unwrap_or("");
+                            if name.starts_with('_') {
+                                paths.push(path);
                             }
                         }
                     }
@@ -93,37 +171,58 @@ impl LibraryFinder {
             }
         }
         
-        Ok(books)
-    }
-    
-    fn get_library_path(&self, user_idx: &str) -> miette::Result<PathBuf> {
-        // Use the original library path logic
-        #[cfg(target_os = "macos")]
-        {
-            Ok(PathBuf::from(std::env::var("HOME").into_diagnostic()?)
-                .join("Library")
-                .join("Application Support")
-                .join("Ridibooks")
-                .join("library")
-                .join(format!("_{}", user_idx)))
-        }
-        
         #[cfg(target_os = "windows")]
         {
-            Ok(PathBuf::from(std::env::var("APPDATA").into_diagnostic()?)
+            let base = PathBuf::from(std::env::var("APPDATA").into_diagnostic()?)
                 .join("Ridibooks")
-                .join("library")
-                .join(format!("_{}", user_idx)))
+                .join("library");
+            
+            paths.push(base.join(format!("_{}", user_idx)));
+            paths.push(base.clone());
+            
+            if base.exists() {
+                if let Ok(entries) = fs::read_dir(&base) {
+                    for entry in entries.flatten() {
+                        let path = entry.path();
+                        if path.is_dir() {
+                            let name = path.file_name()
+                                .and_then(|n| n.to_str())
+                                .unwrap_or("");
+                            if name.starts_with('_') {
+                                paths.push(path);
+                            }
+                        }
+                    }
+                }
+            }
         }
         
         #[cfg(not(any(target_os = "macos", target_os = "windows")))]
         {
-            // Linux fallback
             let home = std::env::var("HOME").into_diagnostic()?;
-            Ok(PathBuf::from(home)
-                .join(".local/share/Ridibooks/library")
-                .join(format!("_{}", user_idx)))
+            let base = PathBuf::from(home).join(".local/share/Ridibooks/library");
+            
+            paths.push(base.join(format!("_{}", user_idx)));
+            paths.push(base.clone());
+            
+            if base.exists() {
+                if let Ok(entries) = fs::read_dir(&base) {
+                    for entry in entries.flatten() {
+                        let path = entry.path();
+                        if path.is_dir() {
+                            let name = path.file_name()
+                                .and_then(|n| n.to_str())
+                                .unwrap_or("");
+                            if name.starts_with('_') {
+                                paths.push(path);
+                            }
+                        }
+                    }
+                }
+            }
         }
+        
+        Ok(paths)
     }
     
     fn calculate_confidence(&self, path: &Path) -> f32 {
@@ -154,6 +253,9 @@ impl LibraryFinder {
                                 .filter(|e| e.path().is_dir() && self.is_book_directory(&e.path()))
                                 .count();
                         }
+                    } else if entry_path.is_dir() && self.is_book_directory(&entry_path) {
+                        // Direct book directories (no user subdirectory)
+                        book_count += 1;
                     }
                 }
                 
