@@ -121,9 +121,10 @@ cargo run -- --batch-mode --output-dir "/path/to/output"
 ```
 
 **Default Behavior:**
-- Decrypted books are placed in the same directory as the original DRM-protected files
-- Example: If your book is in `/library/12345/book.epub`, the decrypted file goes to `/library/12345/book.epub`
-- This keeps your library organized and makes it easy to manage
+- Decrypted books are placed in the library root folder
+- Example: Books in `/library/12345/` subdirectories are decrypted to `/library/12345.epub`
+- All decrypted files in one easy-to-find location
+- Original encrypted files remain in their subdirectories
 
 
 ### Troubleshooting
@@ -156,7 +157,7 @@ verbose = false
 organize_output = true
 backup_originals = true
 
-# Optional: custom output directory (if not set, files go to their source directories)
+# Optional: custom output directory (if not set, files go to library root folder)
 # output_directory = "/path/to/your/books"
 
 # Optional: custom library location (if books are not in standard RIDI location)
