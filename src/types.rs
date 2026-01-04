@@ -101,13 +101,13 @@ impl BookInfo {
     }
     
     pub fn is_already_decrypted(&self, config: &Config) -> bool {
-        // Check if output file already exists in the configured output directory
+        // Check if output file already exists
         let output_path = if let Some(output_dir) = &config.output_directory {
+            // Check custom output directory if specified
             PathBuf::from(output_dir).join(self.get_output_filename())
         } else {
-            std::env::current_dir()
-                .map(|dir| dir.join(self.get_output_filename()))
-                .unwrap_or_else(|_| PathBuf::from(self.get_output_filename()))
+            // Default: check in the same directory as the source book
+            self.path.join(self.get_output_filename())
         };
 
         output_path.exists()

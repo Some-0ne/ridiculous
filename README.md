@@ -110,9 +110,20 @@ This script will:
 ### 3. Process Your Books
 
 ```bash
-#Use this generally to get your books
+# Use this generally to decrypt your books
 cargo run
+
+# Batch mode for faster processing (processes all books without prompts)
+cargo run -- --batch-mode
+
+# Custom output directory (default: books are placed in their source directories)
+cargo run -- --batch-mode --output-dir "/path/to/output"
 ```
+
+**Default Behavior:**
+- Decrypted books are placed in the same directory as the original DRM-protected files
+- Example: If your book is in `/library/12345/book.epub`, the decrypted file goes to `/library/12345/book.epub`
+- This keeps your library organized and makes it easy to manage
 
 
 ### Troubleshooting
@@ -144,8 +155,13 @@ user_idx = "your_user_idx_here"
 verbose = false
 organize_output = true
 backup_originals = true
-output_directory = "/path/to/your/books"
-library_path = "/custom/path/to/ridi/library"  # Optional: custom library location
+
+# Optional: custom output directory (if not set, files go to their source directories)
+# output_directory = "/path/to/your/books"
+
+# Optional: custom library location (if books are not in standard RIDI location)
+# library_path = "/custom/path/to/ridi/library"
+
 max_retries = 3
 timeout_seconds = 30
 ```

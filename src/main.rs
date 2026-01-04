@@ -453,9 +453,11 @@ fn get_output_path(book: &BookInfo, config: &Config) -> Result<PathBuf> {
     let file_name = book.get_output_filename();
 
     let base_dir = if let Some(output_dir) = &config.output_directory {
+        // Use custom output directory if specified
         PathBuf::from(output_dir)
     } else {
-        std::env::current_dir()?
+        // Default: place decrypted file in the same directory as the source book
+        book.path.clone()
     };
 
     Ok(base_dir.join(file_name))
