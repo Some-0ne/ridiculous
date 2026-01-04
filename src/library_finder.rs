@@ -61,9 +61,13 @@ impl LibraryFinder {
     }
     
     pub fn find_books(&self, config: &Config) -> miette::Result<Vec<BookInfo>> {
-        // Try to find library path using user_idx
-        let library_paths = self.get_library_paths(&config.user_idx)?;
-        
+        // Use custom library path if provided, otherwise use auto-detection
+        let library_paths = if let Some(custom_path) = &config.library_path {
+            vec![PathBuf::from(custom_path)]
+        } else {
+            self.get_library_paths(&config.user_idx)?
+        };
+
         let mut books = Vec::new();
         let mut checked_paths = Vec::new();
         

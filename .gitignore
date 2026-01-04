@@ -1,2 +1,38 @@
+# macOS
 .DS_Store
+.AppleDouble
+.LSOverride
+
+# Rust
 target/
+Cargo.lock
+**/*.rs.bk
+*.pdb
+
+# Build artifacts
+*.app
+*.dmg
+*.deb
+*.rpm
+
+# Output files (decrypted books)
+*.epub
+*.pdf
+
+# User config files
+.ridiculous.toml
+~/.ridiculous.toml
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+
+# State files
+ridiculous_state.json
+.ridiculous_state.json

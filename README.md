@@ -23,13 +23,15 @@ Before getting started, make sure you have:
 
 ### 🔥 Capabilities
 - **📚 Batch Processing**: Process multiple books simultaneously with configurable parallelism
-- **📊 Progress Tracking**: Real-time progress bars and detailed status reporting  
+- **📊 Progress Tracking**: Real-time progress bars and detailed status reporting
 - **🔄 Resume Support**: Continue from where you left off if processing is interrupted
 - **🔍 Smart Library Detection**: Automatically finds RIDI installations across all platforms
+- **📁 Custom Library Path**: Specify custom book library locations
 - **⚙️ Configuration Management**: Save credentials and preferences in config files
 - **🛠️ Advanced Diagnostics**: Built-in troubleshooting and system validation
 - **🔐 Credential Validation**: Verify your RIDI credentials before processing
 - **⚡ Async Architecture**: Fast, efficient processing with proper error handling
+- **🛡️ Graceful Shutdown**: Saves progress when interrupted (Ctrl+C)
 
 ### 📖 Format Support
 - **EPUB** - Complete support with metadata preservation
@@ -143,6 +145,7 @@ verbose = false
 organize_output = true
 backup_originals = true
 output_directory = "/path/to/your/books"
+library_path = "/custom/path/to/ridi/library"  # Optional: custom library location
 max_retries = 3
 timeout_seconds = 30
 ```
@@ -204,6 +207,9 @@ ridiculous --diagnose
 
 # Make sure you're using the correct user_idx
 # Each user has their own library folder (_{user_idx})
+
+# Use custom library path if books are in non-standard location
+ridiculous --library-path "/path/to/your/ridi/books" --device-id "your_id" --user-idx "your_idx"
 ```
 
 ### Debug Mode

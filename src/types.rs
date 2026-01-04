@@ -11,6 +11,7 @@ pub struct Config {
     pub organize_output: bool,
     pub backup_originals: bool,
     pub output_directory: Option<String>,
+    pub library_path: Option<String>,
     pub max_retries: u32,
     pub timeout_seconds: u64,
 }
@@ -24,6 +25,7 @@ impl Default for Config {
             organize_output: false,
             backup_originals: true,
             output_directory: None,
+            library_path: None,
             max_retries: 3,
             timeout_seconds: 30,
         }
@@ -98,12 +100,16 @@ impl BookInfo {
         self.title.clone().unwrap_or_else(|| self.id.clone())
     }
     
-    pub fn is_already_decrypted(&self) -> bool {
-        // Check if output file already exists in current directory
-        let output_path = std::env::current_dir()
-            .map(|dir| dir.join(self.get_output_filename()))
-            .unwrap_or_else(|_| PathBuf::from(self.get_output_filename()));
-        
+    pub fn is_already_decrypted(&self, config: &Config) -> bool {
+        // Check if output file already exists in the configured output directory
+        let output_path = if let Some(output_dir) = &config.output_directory {
+            PathBuf::from(output_dir).join(self.get_output_filename())
+        } else {
+            std::env::current_dir()
+                .map(|dir| dir.join(self.get_output_filename()))
+                .unwrap_or_else(|_| PathBuf::from(self.get_output_filename()))
+        };
+
         output_path.exists()
     }
     

@@ -9,6 +9,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Semaphore;
+use tokio::signal;
 
 mod types;
 mod library_finder;
@@ -58,6 +59,9 @@ struct Args {
     
     #[arg(long)]
     organize: bool,
+
+    #[arg(long)]
+    library_path: Option<PathBuf>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -109,31 +113,27 @@ async fn main() -> miette::Result<()> {
     let config = load_or_create_config(&args)?;
     
     // Load processing state for resume functionality
-    let mut state = if args.resume {
+    let state = if args.resume {
         load_processing_state().unwrap_or_default()
     } else {
         ProcessingState::default()
     };
-    
+
     // Find books using library finder
     let library_finder = LibraryFinder::new();
     let books = library_finder.find_books(&config)?;
-    
+
     if books.is_empty() {
         println!("❌ No books found. Make sure RIDI is installed and books are downloaded.");
         return Ok(());
     }
-    
-    // Filter out already processed books if resuming, or if not forcing re-decryption
+
+    // Filter out already processed books - simplified logic
     let books_to_process: Vec<_> = books.into_iter()
         .filter(|book| {
-            if args.force {
-                true
-            } else if args.resume {
-                !state.completed.contains(&book.id)
-            } else {
-                !book.is_already_decrypted()
-            }
+            args.force ||
+            (args.resume && !state.completed.contains(&book.id)) ||
+            (!args.resume && !book.is_already_decrypted(&config))
         })
         .collect();
     
@@ -143,17 +143,56 @@ async fn main() -> miette::Result<()> {
     }
     
     println!("📚 Found {} books to process", books_to_process.len());
-    
-    if args.batch_mode {
-        process_books_batch(books_to_process, &config, &mut state, args.parallel).await?;
-    } else {
-        process_books_interactive(books_to_process, &config, &mut state).await?;
+
+    // Set up graceful shutdown
+    let state = Arc::new(tokio::sync::Mutex::new(state));
+    let state_clone = state.clone();
+
+    // Spawn signal handler for graceful shutdown
+    tokio::spawn(async move {
+        #[cfg(unix)]
+        {
+            let mut sigterm = signal::unix::signal(signal::unix::SignalKind::terminate())
+                .expect("Failed to setup SIGTERM handler");
+            let mut sigint = signal::unix::signal(signal::unix::SignalKind::interrupt())
+                .expect("Failed to setup SIGINT handler");
+
+            tokio::select! {
+                _ = sigterm.recv() => {
+                    eprintln!("\n⚠️  Received SIGTERM, saving state and exiting...");
+                }
+                _ = sigint.recv() => {
+                    eprintln!("\n⚠️  Received SIGINT (Ctrl+C), saving state and exiting...");
+                }
+            }
+        }
+
+        #[cfg(not(unix))]
+        {
+            signal::ctrl_c().await.expect("Failed to setup Ctrl+C handler");
+            eprintln!("\n⚠️  Received Ctrl+C, saving state and exiting...");
+        }
+
+        let state = state_clone.lock().await;
+        let _ = save_processing_state(&state);
+        std::process::exit(0);
+    });
+
+    // Process books
+    {
+        let mut state_guard = state.lock().await;
+        if args.batch_mode {
+            process_books_batch(books_to_process, &config, &mut state_guard, args.parallel).await?;
+        } else {
+            process_books_interactive(books_to_process, &config, &mut state_guard).await?;
+        }
     }
-    
+
     // Save final state
-    save_processing_state(&state).map_err(|e| miette::miette!("{}", e))?;
-    
-    print_summary(&state);
+    let final_state = state.lock().await;
+    save_processing_state(&final_state).map_err(|e| miette::miette!("{}", e))?;
+
+    print_summary(&final_state);
     Ok(())
 }
 
@@ -178,7 +217,7 @@ async fn process_books_batch(
     overall_pb.set_style(
         ProgressStyle::default_bar()
             .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} books ({msg})")
-            .unwrap()
+            .expect("Failed to set overall progress bar style")
     );
     overall_pb.set_message("Processing books...");
     
@@ -191,25 +230,26 @@ async fn process_books_batch(
         let overall_pb = overall_pb.clone();
         
         let handle = tokio::spawn(async move {
-            let _permit = semaphore.acquire().await.unwrap();
-            
+            let _permit = semaphore.acquire().await
+                .expect("Failed to acquire semaphore");
+
             let pb = multi_progress.add(ProgressBar::new(100));
             pb.set_style(
                 ProgressStyle::default_bar()
                     .template("{spinner:.green} {msg} [{bar:30.cyan/blue}] {percent}%")
-                    .unwrap()
+                    .expect("Failed to set progress bar style")
             );
             pb.set_message(format!("📖 {}", book.get_display_name()));
-            
+
             let result = process_single_book(&book, &config, &pb).await;
-            
+
             pb.finish_with_message(match &result {
                 Ok(_) => format!("✅ {}", book.get_display_name()),
                 Err(e) => format!("❌ {} - {}", book.get_display_name(), e),
             });
-            
+
             overall_pb.inc(1);
-            
+
             (book.id.clone(), result)
         });
         
@@ -218,15 +258,21 @@ async fn process_books_batch(
     
     // Wait for all tasks and collect results
     for handle in handles {
-        let (book_id, result) = handle.await.unwrap();
-        match result {
-            Ok(_) => state.completed.push(book_id),
-            Err(e) => state.failed.push((book_id, e.to_string())),
-        }
-        
-        // Periodically save state
-        if (state.completed.len() + state.failed.len()) % 5 == 0 {
-            let _ = save_processing_state(state);
+        match handle.await {
+            Ok((book_id, result)) => {
+                match result {
+                    Ok(_) => state.completed.push(book_id),
+                    Err(e) => state.failed.push((book_id, e.to_string())),
+                }
+
+                // Periodically save state
+                if (state.completed.len() + state.failed.len()) % 5 == 0 {
+                    let _ = save_processing_state(state);
+                }
+            }
+            Err(e) => {
+                eprintln!("⚠️  Task panicked: {}", e);
+            }
         }
     }
     
@@ -247,7 +293,7 @@ async fn process_books_interactive(
         pb.set_style(
             ProgressStyle::default_bar()
                 .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {percent}% {msg}")
-                .unwrap()
+                .expect("Failed to set progress bar style")
         );
         
         match process_single_book(book, config, &pb).await {
@@ -284,60 +330,64 @@ async fn process_single_book(
 ) -> Result<()> {
     pb.set_message("Reading book file...");
     pb.set_position(10);
-    
+
     // Retry logic for file operations
     let retries = 3;
+    let mut last_error = None;
+
     for attempt in 0..retries {
-        match decrypt_book_with_original_logic(book, &config.device_id, pb).await {
+        match decrypt_book_with_original_logic(book, config, pb).await {
             Ok(_) => return Ok(()),
             Err(e) if attempt < retries - 1 && is_retryable_error(&e) => {
-                pb.set_message("Retrying...");
+                let msg = format!("Retrying... (attempt {}/{})", attempt + 2, retries);
+                pb.set_message(msg);
+                last_error = Some(e);
                 tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
             }
             Err(e) => return Err(e),
         }
     }
-    
-    unreachable!()
+
+    Err(last_error.unwrap_or_else(|| anyhow::anyhow!("All retry attempts failed")))
 }
 
 // Core RIDI decryption functions (from original code)
 async fn decrypt_book_with_original_logic(
-    book: &BookInfo, 
-    device_id: &str, 
+    book: &BookInfo,
+    config: &Config,
     pb: &ProgressBar
 ) -> Result<()> {
     pb.set_message("Extracting decryption key...");
     pb.set_position(20);
-    
+
     // Get the decryption key using original logic
-    let key = decrypt_key(book, device_id)?;
-    
+    let key = decrypt_key(book, &config.device_id)?;
+
     pb.set_message("Decrypting book content...");
     pb.set_position(50);
-    
+
     // Decrypt the book using original logic
     let decrypted_content = decrypt_book_content(book, &key)?;
-    
+
     pb.set_message("Writing decrypted file...");
     pb.set_position(80);
-    
+
     // Write the decrypted content
-    let output_path = get_output_path(book)?;
-    
+    let output_path = get_output_path(book, config)?;
+
     // Ensure output directory exists
     if let Some(parent) = output_path.parent() {
         fs::create_dir_all(parent)?;
     }
-    
+
     fs::write(&output_path, decrypted_content)?;
-    
+
     pb.set_position(100);
-    
+
     if let Some(file_name) = output_path.file_name() {
         pb.set_message(format!("Saved: {}", file_name.to_string_lossy()));
     }
-    
+
     Ok(())
 }
 
@@ -399,10 +449,16 @@ fn decrypt_book_content(book_info: &BookInfo, key: &[u8; 16]) -> Result<Vec<u8>>
     Ok(decrypted.to_vec())
 }
 
-fn get_output_path(book: &BookInfo) -> Result<PathBuf> {
+fn get_output_path(book: &BookInfo, config: &Config) -> Result<PathBuf> {
     let file_name = book.get_output_filename();
-    let current_dir = std::env::current_dir()?;
-    Ok(current_dir.join(file_name))
+
+    let base_dir = if let Some(output_dir) = &config.output_directory {
+        PathBuf::from(output_dir)
+    } else {
+        std::env::current_dir()?
+    };
+
+    Ok(base_dir.join(file_name))
 }
 
 fn is_retryable_error(error: &anyhow::Error) -> bool {
@@ -477,9 +533,14 @@ async fn validate_credentials(config: &Config) -> Result<()> {
 }
 
 fn load_or_create_config(args: &Args) -> miette::Result<Config> {
-    let config_path = args.config_path.clone()
-        .unwrap_or_else(|| dirs::home_dir().unwrap().join(".ridiculous.toml"));
-    
+    let config_path = if let Some(path) = args.config_path.clone() {
+        path
+    } else {
+        let home = dirs::home_dir()
+            .ok_or_else(|| miette!("Could not determine home directory"))?;
+        home.join(".ridiculous.toml")
+    };
+
     let mut config = if config_path.exists() {
         let content = fs::read_to_string(&config_path).into_diagnostic()?;
         toml::from_str(&content).into_diagnostic()?
@@ -496,6 +557,9 @@ fn load_or_create_config(args: &Args) -> miette::Result<Config> {
     }
     if let Some(output_dir) = &args.output_dir {
         config.output_directory = Some(output_dir.to_string_lossy().to_string());
+    }
+    if let Some(library_path) = &args.library_path {
+        config.library_path = Some(library_path.to_string_lossy().to_string());
     }
     config.verbose = args.verbose;
     config.organize_output = args.organize;
@@ -528,13 +592,20 @@ fn save_processing_state(state: &ProcessingState) -> Result<()> {
     let state_path = dirs::cache_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join("ridiculous_state.json");
-    
+
     if let Some(parent) = state_path.parent() {
         fs::create_dir_all(parent)?;
     }
-    
+
+    // Use atomic write: write to temp file then rename
+    let temp_path = state_path.with_extension("json.tmp");
     let content = serde_json::to_string_pretty(state)?;
-    fs::write(state_path, content)?;
+
+    fs::write(&temp_path, content)?;
+
+    // Atomic rename (overwrites destination on success)
+    fs::rename(&temp_path, &state_path)?;
+
     Ok(())
 }
 
