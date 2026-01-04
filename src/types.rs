@@ -38,6 +38,7 @@ pub struct BookInfo {
     pub format: BookFormat,
     pub path: PathBuf, // Directory containing the book files
     pub title: Option<String>,
+    pub book_filename: String, // Actual filename (may include version like .v11.epub)
 }
 
 impl BookInfo {
@@ -46,35 +47,46 @@ impl BookInfo {
             .ok_or_else(|| miette::miette!("Invalid book directory"))?
             .to_string_lossy()
             .to_string();
-        
-        let format = Self::detect_format(&book_dir)?;
-        
+
+        let (format, book_filename) = Self::detect_format_and_filename(&book_dir, &id)?;
+
         Ok(Self {
             id,
             format,
             path: book_dir,
             title: None,
+            book_filename,
         })
     }
     
-    fn detect_format(book_dir: &PathBuf) -> miette::Result<BookFormat> {
+    fn detect_format_and_filename(book_dir: &PathBuf, book_id: &str) -> miette::Result<(BookFormat, String)> {
+        // Try to find the actual book file in the directory
+        // Files can be named {id}.epub or {id}.v*.epub (versioned)
         for entry in std::fs::read_dir(book_dir).map_err(|e| miette::miette!("Cannot read book directory: {}", e))? {
             let entry = entry.map_err(|e| miette::miette!("Directory entry error: {}", e))?;
             let path = entry.path();
-            
+
             if path.is_file() {
-                if let Some(ext) = path.extension() {
-                    match ext.to_string_lossy().to_lowercase().as_str() {
-                        "epub" => return Ok(BookFormat::Epub),
-                        "pdf" => return Ok(BookFormat::Pdf),
-                        _ => continue,
+                if let Some(filename) = path.file_name() {
+                    let filename_str = filename.to_string_lossy();
+
+                    // Check if it's a book file (starts with book_id and ends with .epub or .pdf)
+                    if filename_str.starts_with(book_id) {
+                        if let Some(ext) = path.extension() {
+                            let ext_str = ext.to_string_lossy().to_lowercase();
+                            match ext_str.as_str() {
+                                "epub" => return Ok((BookFormat::Epub, filename_str.to_string())),
+                                "pdf" => return Ok((BookFormat::Pdf, filename_str.to_string())),
+                                _ => continue,
+                            }
+                        }
                     }
                 }
             }
         }
-        
-        // Default to EPUB if no specific format found
-        Ok(BookFormat::Epub)
+
+        // If no book file found, return default (will fail later with proper error)
+        Ok((BookFormat::Epub, format!("{}.epub", book_id)))
     }
     
     pub fn get_data_file_path(&self) -> PathBuf {
@@ -84,9 +96,8 @@ impl BookInfo {
     }
     
     pub fn get_book_file_path(&self) -> PathBuf {
-        let mut path = self.path.join(&self.id);
-        path.set_extension(self.format.as_str());
-        path
+        // Use the actual filename discovered during initialization
+        self.path.join(&self.book_filename)
     }
     
     pub fn get_output_filename(&self) -> OsString {
