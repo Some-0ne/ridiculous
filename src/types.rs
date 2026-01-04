@@ -116,9 +116,14 @@ impl BookInfo {
         let output_path = if let Some(output_dir) = &config.output_directory {
             // Check custom output directory if specified
             PathBuf::from(output_dir).join(self.get_output_filename())
+        } else if let Some(library_path) = &config.library_path {
+            // Check in the library path (parent of book directories)
+            PathBuf::from(library_path).join(self.get_output_filename())
         } else {
-            // Default: check in the same directory as the source book
-            self.path.join(self.get_output_filename())
+            // Fallback: check in parent of book directory (library folder)
+            self.path.parent()
+                .map(|p| p.join(self.get_output_filename()))
+                .unwrap_or_else(|| self.path.join(self.get_output_filename()))
         };
 
         output_path.exists()

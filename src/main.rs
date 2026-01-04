@@ -455,9 +455,14 @@ fn get_output_path(book: &BookInfo, config: &Config) -> Result<PathBuf> {
     let base_dir = if let Some(output_dir) = &config.output_directory {
         // Use custom output directory if specified
         PathBuf::from(output_dir)
+    } else if let Some(library_path) = &config.library_path {
+        // Use the library path (parent of book directories)
+        PathBuf::from(library_path)
     } else {
-        // Default: place decrypted file in the same directory as the source book
-        book.path.clone()
+        // Fallback: use parent of book directory (library folder)
+        book.path.parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| book.path.clone())
     };
 
     Ok(base_dir.join(file_name))
