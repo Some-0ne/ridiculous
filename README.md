@@ -1,6 +1,6 @@
 # Ridiculous Enhanced
 
-**Buy from RIDI, Read Anywhere!** - An enhanced command-line tool that extracts your purchased ebooks from [RIDI](https://ridi.com/) and converts them into DRM-free files with batch processing, progress tracking, and advanced features.
+**Buy from RIDI, Read Anywhere!** - An enhanced tool (CLI & GUI) that extracts your purchased ebooks from [RIDI](https://ridi.com/) and converts them into DRM-free files with batch processing, progress tracking, and advanced features.
 
 [![Rust](https://img.shields.io/badge/rust-1.70+-orange.svg)](https://www.rust-lang.org)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)](https://github.com/Some-0ne/ridiculous)
@@ -22,6 +22,8 @@ Before getting started, make sure you have:
 ## ✨ Enhanced Features
 
 ### 🔥 Capabilities
+- **🖥️ GUI Mode**: User-friendly graphical interface for non-technical users
+- **💻 CLI Mode**: Powerful command-line interface for advanced users
 - **📚 Batch Processing**: Process multiple books simultaneously with configurable parallelism
 - **📊 Progress Tracking**: Real-time progress bars and detailed status reporting
 - **🔄 Resume Support**: Continue from where you left off if processing is interrupted
@@ -80,9 +82,31 @@ find ./scripts -name "*.sh" -exec chmod +x {} \;
 
 #### Option C: Using Cargo
 ```bash
-# Install directly from source
+# Install CLI version directly from source
 cargo install --git https://github.com/Some-0ne/ridiculous.git
+
+# Install with GUI support
+cargo install --git https://github.com/Some-0ne/ridiculous.git --features gui
 ```
+
+### 🖥️ GUI Mode (Optional)
+
+Build with graphical interface for easier use:
+
+```bash
+# Build with GUI feature
+cargo build --release --features gui
+
+# Run the GUI
+cargo run --release --features gui -- --gui
+```
+
+The GUI provides:
+- Simple credential input
+- Library path selection with file browser
+- Book discovery and selection
+- Visual progress tracking
+- Status reporting
 
 ### 2. Get Your RIDI Credentials
 

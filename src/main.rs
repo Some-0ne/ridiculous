@@ -17,6 +17,9 @@ mod types;
 mod library_finder;
 mod credential_manager;
 
+#[cfg(feature = "gui")]
+mod gui;
+
 use types::*;
 use library_finder::LibraryFinder;
 use credential_manager::CredentialManager;
@@ -64,6 +67,10 @@ struct Args {
 
     #[arg(long)]
     library_path: Option<PathBuf>,
+
+    #[cfg(feature = "gui")]
+    #[arg(long)]
+    gui: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -96,11 +103,18 @@ async fn main() -> miette::Result<()> {
     }));
 
     let args = Args::parse();
-    
+
+    // Launch GUI if requested
+    #[cfg(feature = "gui")]
+    if args.gui {
+        return gui::run_gui()
+            .map_err(|e| miette::miette!("GUI error: {}", e));
+    }
+
     if args.verbose {
         print_welcome();
     }
-    
+
     // Handle special modes first
     if args.diagnose {
         return run_diagnostics(&args).await;

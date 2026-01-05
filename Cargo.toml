@@ -40,13 +40,14 @@ zip = { version = "0.6", default-features = false, features = ["deflate"] }
 # Text processing
 regex = "1.0"
 
-# Windows registry (Windows only)
-[target.'cfg(windows)'.dependencies]
-winreg = "0.52"
-
 # Optional GUI dependencies
 egui = { version = "0.24", optional = true }
 eframe = { version = "0.24", optional = true }
+rfd = { version = "0.12", optional = true }
+
+# Windows registry (Windows only)
+[target.'cfg(windows)'.dependencies]
+winreg = "0.52"
 
 # Development dependencies
 [dev-dependencies]
@@ -55,7 +56,7 @@ tokio-test = "0.4"
 
 [features]
 default = []
-gui = ["egui", "eframe"]
+gui = ["dep:egui", "dep:eframe", "dep:rfd"]
 
 [[bin]]
 name = "ridiculous"
