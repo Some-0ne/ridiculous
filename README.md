@@ -89,24 +89,76 @@ cargo install --git https://github.com/Some-0ne/ridiculous.git
 cargo install --git https://github.com/Some-0ne/ridiculous.git --features gui
 ```
 
-### 🖥️ GUI Mode (Optional)
+### 🖥️ GUI Mode (User-Friendly Interface)
 
-Build with graphical interface for easier use:
+For non-technical users, we provide a graphical interface with an easy-to-use workflow.
+
+#### macOS App Bundle (Recommended for macOS users)
+
+Build a native macOS application:
+
+```bash
+# Make the script executable (first time only)
+chmod +x build_gui_app.sh
+
+# Build the app bundle
+./build_gui_app.sh
+
+# Open the app
+open Ridiculous.app
+
+# Optional: Install to Applications folder
+mv Ridiculous.app /Applications/
+```
+
+#### Cross-Platform GUI
+
+For Windows and Linux, or if you prefer running from terminal:
 
 ```bash
 # Build with GUI feature
 cargo build --release --features gui
 
 # Run the GUI
+./target/release/ridiculous --gui
+
+# Or using cargo run
 cargo run --release --features gui -- --gui
 ```
 
-The GUI provides:
-- Simple credential input
-- Library path selection with file browser
-- Book discovery and selection
-- Visual progress tracking
-- Status reporting
+#### Using the GUI
+
+The GUI provides an intuitive workflow:
+
+1. **Setup Screen**
+   - Enter your Device ID (from RIDI credentials)
+   - Enter your User Index (from RIDI credentials)
+   - Optionally specify a custom Library Path (or leave empty for auto-detection)
+   - Click "🔍 Find Books" to scan your library
+
+2. **Book Selection**
+   - View all discovered books with their DRM format (v1 or v11)
+   - Select/deselect books using checkboxes
+   - Use "Select All" or "Deselect All" for quick selection
+   - Click "🔓 Decrypt" to start processing
+
+3. **Progress Tracking**
+   - Real-time progress bar showing overall completion
+   - Current book being processed
+   - Live status updates
+
+4. **Results**
+   - Summary of successful and failed decryptions
+   - Option to decrypt more books
+   - Decrypted files saved to library root folder
+
+**GUI Features:**
+- ✨ No command-line experience needed
+- 📁 Visual file browser for library path selection
+- 📊 Real-time progress tracking with percentage
+- ✅ Success/failure indicators for each book
+- 🔄 Support for both v1 and v11 DRM formats
+- 🎯 Skip already-decrypted books automatically
 
 ### 2. Get Your RIDI Credentials
 
@@ -275,18 +327,27 @@ cd ridiculous
 # Make build script executable
 chmod +x ./scripts/build.sh
 
-# Simple build
+# Simple CLI build
 cargo build --release
 
 # Enhanced build with optimizations
 ./scripts/build.sh --install
 
+# Build with GUI support
+cargo build --release --features gui
+
+# Build macOS app bundle (macOS only)
+chmod +x build_gui_app.sh
+./build_gui_app.sh
+
 # Run tests
 cargo test
-
-# Build with GUI support (future feature)
-cargo build --release --features gui
 ```
+
+**Build Options:**
+- **CLI only**: `cargo build --release` - Smallest binary, command-line interface
+- **CLI + GUI**: `cargo build --release --features gui` - Includes both modes
+- **macOS App**: `./build_gui_app.sh` - Creates `Ridiculous.app` bundle
 
 
 ### Finding and understanding your IDs'
