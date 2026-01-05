@@ -208,6 +208,19 @@ async fn decrypt_single_book(
     use std::fs;
     use std::io::Read as _;
 
+    // Check if already decrypted
+    let output_path = if let Some(dir) = output_dir {
+        PathBuf::from(dir).join(book.get_output_filename())
+    } else if let Some(library_path) = book.path.parent() {
+        library_path.join(book.get_output_filename())
+    } else {
+        book.path.join(book.get_output_filename())
+    };
+
+    if output_path.exists() {
+        return Ok(()); // Skip already decrypted books
+    }
+
     // Read .dat file
     let dat_path = book.get_data_file_path();
     let mut dat_file = fs::File::open(&dat_path)
@@ -224,15 +237,6 @@ async fn decrypt_single_book(
         decrypt_v11_book(book, &key)?
     } else {
         decrypt_v1_book(book, &key)?
-    };
-
-    // Determine output path
-    let output_path = if let Some(dir) = output_dir {
-        PathBuf::from(dir).join(book.get_output_filename())
-    } else if let Some(library_path) = book.path.parent() {
-        library_path.join(book.get_output_filename())
-    } else {
-        book.path.join(book.get_output_filename())
     };
 
     // Write decrypted book
@@ -263,12 +267,20 @@ fn extract_key_from_dat(dat_data: &[u8], device_id: &str) -> anyhow::Result<[u8;
         .decrypt_padded_mut::<aes::cipher::block_padding::Pkcs7>(&mut encrypted)
         .map_err(|_| anyhow::anyhow!("Failed to decrypt .dat file"))?;
 
-    if decrypted.len() < 84 {
-        anyhow::bail!("Decrypted .dat data too small");
+    // Convert to UTF-8 string (the .dat contains text data)
+    let plaintext_str = std::str::from_utf8(decrypted)
+        .map_err(|_| anyhow::anyhow!("Invalid UTF-8 in decrypted data"))?;
+
+    if plaintext_str.len() < 84 {
+        anyhow::bail!("Decrypted .dat data too short: {} chars", plaintext_str.len());
     }
 
+    // Extract key from characters 68-84 (not bytes!)
     let mut book_key = [0u8; 16];
-    book_key.copy_from_slice(&decrypted[68..84]);
+    let key_slice = &plaintext_str[68..84];
+    let key_bytes = key_slice.as_bytes();
+    let copy_len = std::cmp::min(16, key_bytes.len());
+    book_key[..copy_len].copy_from_slice(&key_bytes[..copy_len]);
 
     Ok(book_key)
 }
