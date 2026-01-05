@@ -39,6 +39,7 @@ pub struct BookInfo {
     pub path: PathBuf, // Directory containing the book files
     pub title: Option<String>,
     pub book_filename: String, // Actual filename (may include version like .v11.epub)
+    pub is_v11: bool, // Whether this uses v11 DRM format
 }
 
 impl BookInfo {
@@ -50,12 +51,16 @@ impl BookInfo {
 
         let (format, book_filename) = Self::detect_format_and_filename(&book_dir, &id)?;
 
+        // Check if this is a v11 format book (filename contains .v)
+        let is_v11 = book_filename.contains(".v");
+
         Ok(Self {
             id,
             format,
             path: book_dir,
             title: None,
             book_filename,
+            is_v11,
         })
     }
     

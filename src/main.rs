@@ -6,10 +6,12 @@ use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use miette::{IntoDiagnostic, miette};
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Semaphore;
 use tokio::signal;
+use zip::ZipArchive;
 
 mod types;
 mod library_finder;
@@ -366,8 +368,13 @@ async fn decrypt_book_with_original_logic(
     pb.set_message("Decrypting book content...");
     pb.set_position(50);
 
-    // Decrypt the book using original logic
-    let decrypted_content = decrypt_book_content(book, &key)?;
+    // Decrypt the book using the appropriate method
+    let decrypted_content = if book.is_v11 {
+        pb.set_message("Decrypting v11 format (per-file encryption)...");
+        decrypt_v11_book(book, &key)?
+    } else {
+        decrypt_book_content(book, &key)?
+    };
 
     pb.set_message("Writing decrypted file...");
     pb.set_position(80);
@@ -447,6 +454,71 @@ fn decrypt_book_content(book_info: &BookInfo, key: &[u8; 16]) -> Result<Vec<u8>>
         .map_err(|error| anyhow::anyhow!("Book decryption failed: {}", error))?;
 
     Ok(decrypted.to_vec())
+}
+
+// V11 format decryption - each file in ZIP has its own IV
+fn decrypt_v11_file_content(encrypted_data: &[u8], key: &[u8; 16]) -> Result<Vec<u8>> {
+    if encrypted_data.len() < 16 {
+        return Err(anyhow::anyhow!("File too small for v11 decryption: {} bytes", encrypted_data.len()));
+    }
+
+    // First 16 bytes are the IV
+    let mut iv = [0; 16];
+    iv.copy_from_slice(&encrypted_data[0..16]);
+
+    let mut encrypted = encrypted_data[16..].to_vec();
+
+    // Decrypt
+    let decrypted = cbc::Decryptor::<aes::Aes128>::new(key.into(), &iv.into())
+        .decrypt_padded_mut::<aes::cipher::block_padding::Pkcs7>(&mut encrypted)
+        .map_err(|error| anyhow::anyhow!("V11 file decryption failed: {}", error))?;
+
+    Ok(decrypted.to_vec())
+}
+
+// Decrypt v11 format book (ZIP with encrypted files inside)
+fn decrypt_v11_book(book_info: &BookInfo, key: &[u8; 16]) -> Result<Vec<u8>> {
+    let book_file_path = book_info.get_book_file_path();
+    let book_file = fs::File::open(&book_file_path)
+        .with_context(|| format!("Failed to open v11 book file: {}", book_file_path.display()))?;
+
+    let mut zip = ZipArchive::new(book_file)
+        .context("Failed to read v11 book as ZIP")?;
+
+    // Create output ZIP in memory
+    let mut output_buffer = Vec::new();
+    {
+        let mut output_zip = zip::ZipWriter::new(std::io::Cursor::new(&mut output_buffer));
+
+        for i in 0..zip.len() {
+            let mut file = zip.by_index(i)?;
+            let file_name = file.name().to_string();
+
+            // Read encrypted file data
+            let mut encrypted_data = Vec::new();
+            file.read_to_end(&mut encrypted_data)?;
+            drop(file); // Release the borrow
+
+            // Decrypt the file
+            let decrypted_data = match decrypt_v11_file_content(&encrypted_data, key) {
+                Ok(data) => data,
+                Err(_) => {
+                    // If decryption fails, keep original (might be metadata/unencrypted)
+                    encrypted_data
+                }
+            };
+
+            // Write to output ZIP
+            let options = zip::write::FileOptions::default()
+                .compression_method(zip::CompressionMethod::Deflated);
+            output_zip.start_file(&file_name, options)?;
+            output_zip.write_all(&decrypted_data)?;
+        }
+
+        output_zip.finish()?;
+    }
+
+    Ok(output_buffer)
 }
 
 fn get_output_path(book: &BookInfo, config: &Config) -> Result<PathBuf> {

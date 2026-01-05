@@ -34,6 +34,9 @@ walkdir = "2.0"
 aes = "0.8"
 cbc = "0.1"
 
+# ZIP handling for v11 format
+zip = { version = "0.6", default-features = false, features = ["deflate"] }
+
 # Text processing
 regex = "1.0"
 

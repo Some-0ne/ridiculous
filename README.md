@@ -35,7 +35,11 @@ Before getting started, make sure you have:
 
 ### 📖 Format Support
 - **EPUB** - Complete support with metadata preservation
+  - **v1 DRM** - Original RIDI encryption format (full-file encryption)
+  - **v11 DRM** - Newer RIDI encryption format (per-file ZIP encryption)
 - **PDF** - Full extraction with original formatting
+
+> **Automatic DRM Detection**: The tool automatically detects and handles both v1 and v11 DRM formats. No manual intervention needed!
 
 ### 🎯 Core Features
 - **Cross-platform**: Windows, macOS, and Linux support
