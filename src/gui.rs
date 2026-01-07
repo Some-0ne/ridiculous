@@ -569,6 +569,6 @@ pub fn run_gui() -> Result<(), eframe::Error> {
     eframe::run_native(
         "Ridiculous - RIDI Book Decryption",
         options,
-        Box::new(|cc| Box::new(RidiculousApp::new(cc))),
+        Box::new(|cc| Ok(Box::new(RidiculousApp::new(cc)))),
     )
 }

@@ -41,9 +41,9 @@ zip = { version = "0.6", default-features = false, features = ["deflate"] }
 regex = "1.0"
 
 # Optional GUI dependencies
-egui = { version = "0.24", optional = true }
-eframe = { version = "0.24", optional = true }
-rfd = { version = "0.12", optional = true }
+egui = { version = "0.29", optional = true }
+eframe = { version = "0.29", optional = true }
+rfd = { version = "0.14", optional = true }
 
 # Windows registry (Windows only)
 [target.'cfg(windows)'.dependencies]
