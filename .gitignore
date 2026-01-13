@@ -10,10 +10,17 @@ Cargo.lock
 *.pdb
 
 # Build artifacts
-*.app
+Ridiculous.app/
 *.dmg
 *.deb
 *.rpm
+*.zip
+
+# Test files
+test_*.py
+test_*.rs
+test_*.sh
+*.rcgu.o
 
 # Output files (decrypted books)
 *.epub

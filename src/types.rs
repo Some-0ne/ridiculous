@@ -67,6 +67,11 @@ impl BookInfo {
     fn detect_format_and_filename(book_dir: &PathBuf, book_id: &str) -> miette::Result<(BookFormat, String)> {
         // Try to find the actual book file in the directory
         // Files can be named {id}.epub or {id}.v*.epub (versioned)
+        // IMPORTANT: Prioritize encrypted files (.v*.epub) over plain files
+
+        let mut plain_epub: Option<String> = None;
+        let mut plain_pdf: Option<String> = None;
+
         for entry in std::fs::read_dir(book_dir).map_err(|e| miette::miette!("Cannot read book directory: {}", e))? {
             let entry = entry.map_err(|e| miette::miette!("Directory entry error: {}", e))?;
             let path = entry.path();
@@ -80,14 +85,41 @@ impl BookInfo {
                         if let Some(ext) = path.extension() {
                             let ext_str = ext.to_string_lossy().to_lowercase();
                             match ext_str.as_str() {
-                                "epub" => return Ok((BookFormat::Epub, filename_str.to_string())),
-                                "pdf" => return Ok((BookFormat::Pdf, filename_str.to_string())),
+                                "epub" => {
+                                    // If it contains .v (like .v11.epub), it's encrypted - return immediately
+                                    if filename_str.contains(".v") {
+                                        return Ok((BookFormat::Epub, filename_str.to_string()));
+                                    }
+                                    // Otherwise, store as fallback plain epub
+                                    if plain_epub.is_none() {
+                                        plain_epub = Some(filename_str.to_string());
+                                    }
+                                },
+                                "pdf" => {
+                                    // If it contains .v (like .v11.pdf), it's encrypted - return immediately
+                                    if filename_str.contains(".v") {
+                                        return Ok((BookFormat::Pdf, filename_str.to_string()));
+                                    }
+                                    // Otherwise, store as fallback plain pdf
+                                    if plain_pdf.is_none() {
+                                        plain_pdf = Some(filename_str.to_string());
+                                    }
+                                },
                                 _ => continue,
                             }
                         }
                     }
                 }
             }
+        }
+
+        // If we found encrypted files, we would have returned already
+        // So now check for plain files (already decrypted)
+        if let Some(epub) = plain_epub {
+            return Ok((BookFormat::Epub, epub));
+        }
+        if let Some(pdf) = plain_pdf {
+            return Ok((BookFormat::Pdf, pdf));
         }
 
         // If no book file found, return default (will fail later with proper error)
@@ -117,7 +149,31 @@ impl BookInfo {
     }
     
     pub fn is_already_decrypted(&self, config: &Config) -> bool {
-        // Check if output file already exists
+        // First check if the book file itself is already in plaintext (valid zip)
+        // This handles books that are already decrypted in their directory
+        if !self.is_v11 && !self.book_filename.contains(".v") {
+            // This is a plain epub/pdf without version marker
+            // Check if it's a valid zip (decrypted epubs are zip files)
+            let book_path = self.get_book_file_path();
+            if book_path.exists() {
+                // Try to open as zip to see if it's already decrypted
+                if let Ok(file) = std::fs::File::open(&book_path) {
+                    if let Ok(mut zip) = zip::ZipArchive::new(file) {
+                        // It's a valid zip, verify it's actually readable (has files)
+                        if zip.len() > 0 {
+                            // Try to read mimetype to confirm it's a valid EPUB
+                            if let Ok(_) = zip.by_name("mimetype") {
+                                return true;
+                            }
+                            // Or if it just has any files, consider it decrypted
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Check if output file already exists in the output location
         let output_path = if let Some(output_dir) = &config.output_directory {
             // Check custom output directory if specified
             PathBuf::from(output_dir).join(self.get_output_filename())

@@ -40,6 +40,9 @@ struct Args {
     
     #[arg(long)]
     diagnose: bool,
+
+    #[arg(long)]
+    test_devices: bool,
     
     #[arg(long)]
     validate_only: bool,
@@ -116,6 +119,10 @@ async fn main() -> miette::Result<()> {
     }
 
     // Handle special modes first
+    if args.test_devices {
+        return test_all_devices(&args).await;
+    }
+
     if args.diagnose {
         return run_diagnostics(&args).await;
     }
@@ -377,7 +384,8 @@ async fn decrypt_book_with_original_logic(
     pb.set_position(20);
 
     // Get the decryption key using original logic
-    let key = decrypt_key(book, &config.device_id)?;
+    let key = decrypt_key(book, &config.device_id)
+        .with_context(|| format!("Failed to decrypt key for book: {}. Check if device_id is correct for this device.", book.get_display_name()))?;
 
     pb.set_message("Decrypting book content...");
     pb.set_position(50);
@@ -465,7 +473,7 @@ fn decrypt_book_content(book_info: &BookInfo, key: &[u8; 16]) -> Result<Vec<u8>>
 
     let decrypted = cbc::Decryptor::<aes::Aes128>::new(key.into(), &iv.into())
         .decrypt_padded_mut::<aes::cipher::block_padding::Pkcs7>(&mut book_file[16..])
-        .map_err(|error| anyhow::anyhow!("Book decryption failed: {}", error))?;
+        .map_err(|error| anyhow::anyhow!("Book decryption failed: {}. This usually means wrong credentials or the book is encrypted with a different device_id", error))?;
 
     Ok(decrypted.to_vec())
 }
@@ -561,6 +569,107 @@ fn is_retryable_error(error: &anyhow::Error) -> bool {
     error_str.contains("network") ||
     error_str.contains("temporary") ||
     error_str.contains("io error")
+}
+
+async fn test_all_devices(args: &Args) -> miette::Result<()> {
+    use aes::cipher::{BlockDecryptMut, KeyIvInit};
+
+    println!("🧪 Testing all device IDs with your books...\n");
+
+    let library_path = args.library_path.clone()
+        .or_else(|| Some(PathBuf::from("/Users/jannattayef/Documents/ridi")))
+        .ok_or_else(|| miette!("No library path specified"))?;
+
+    println!("📁 Library path: {}\n", library_path.display());
+
+    let device_ids = vec![
+        ("PC #1 (last modified Oct 2025)", "e3bb0a0a-8c71-4800-ac22-9bc817b79874"),
+        ("iPhone 16 Pro Max", "B89CE3E6-6BDA-4093-B8A3-E66071579230"),
+        ("PC #2 (created Aug 2025)", "271c0909-8590-4654-9cc2-708d2c4102b5"),
+    ];
+
+    // Find first book to test
+    let entries = fs::read_dir(&library_path).into_diagnostic()?;
+    let mut test_book = None;
+
+    for entry in entries {
+        let entry = entry.into_diagnostic()?;
+        let path = entry.path();
+        if path.is_dir() {
+            let book_id = path.file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("");
+            let dat_path = path.join(format!("{}.dat", book_id));
+            if dat_path.exists() {
+                test_book = Some((book_id.to_string(), dat_path));
+                break;
+            }
+        }
+    }
+
+    let (book_id, dat_path) = test_book
+        .ok_or_else(|| miette!("No books found to test"))?;
+
+    println!("📖 Testing with book: {}", book_id);
+    println!("📄 Using .dat file: {}\n", dat_path.display());
+
+    let dat_data = fs::read(&dat_path).into_diagnostic()?;
+
+    if dat_data.len() < 32 {
+        return Err(miette!(".dat file too small: {} bytes", dat_data.len()));
+    }
+
+    for (name, device_id) in device_ids {
+        print!("Testing {} ...\n  device_id: {}\n  ", name, device_id);
+
+        let key_bytes = device_id.as_bytes();
+        let mut key = [0u8; 16];
+        let len = key_bytes.len().min(16);
+        key[..len].copy_from_slice(&key_bytes[..len]);
+
+        let mut iv = [0u8; 16];
+        iv.copy_from_slice(&dat_data[0..16]);
+
+        let mut encrypted = dat_data[16..].to_vec();
+
+        match cbc::Decryptor::<aes::Aes128>::new(&key.into(), &iv.into())
+            .decrypt_padded_mut::<aes::cipher::block_padding::Pkcs7>(&mut encrypted)
+        {
+            Ok(decrypted) => {
+                match std::str::from_utf8(decrypted) {
+                    Ok(plaintext_str) => {
+                        println!("✅ SUCCESS! .dat file decrypted");
+                        println!("  Decrypted content length: {} chars", plaintext_str.len());
+                        if plaintext_str.len() >= 84 {
+                            let key_slice = &plaintext_str[68..84];
+                            println!("  Book key extracted: {}", key_slice);
+                            println!("\n🎉 This is the CORRECT device_id! Use these credentials:");
+                            println!("  --device-id {}", device_id);
+                            println!("  --user-idx 6036783\n");
+                            return Ok(());
+                        } else {
+                            println!("  ⚠️  Content too short for key extraction");
+                        }
+                    }
+                    Err(e) => {
+                        println!("❌ Decrypted but not valid UTF-8: {}", e);
+                    }
+                }
+            }
+            Err(e) => {
+                println!("❌ Failed: {:?}", e);
+            }
+        }
+        println!();
+    }
+
+    println!("❌ None of the device IDs worked!");
+    println!("\n💡 Possible issues:");
+    println!("  1. The book might have been downloaded with a different RIDI account");
+    println!("  2. There might be another device registered to your account");
+    println!("  3. Try visiting https://account.ridibooks.com/api/user-devices/app to see all devices");
+
+    Ok(())
 }
 
 async fn run_diagnostics(args: &Args) -> miette::Result<()> {

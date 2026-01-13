@@ -158,7 +158,9 @@ The GUI provides an intuitive workflow:
 - 📊 Real-time progress tracking with percentage
 - ✅ Success/failure indicators for each book
 - 🔄 Support for both v1 and v11 DRM formats
-- 🎯 Skip already-decrypted books automatically
+- 🎯 **Smart filtering**: Automatically detects and skips already-decrypted books
+- 📖 **Cover preservation**: All decrypted EPUBs include original cover images
+- ❌ **Detailed error reporting**: See exactly what went wrong if decryption fails
 
 ### 2. Get Your RIDI Credentials
 
@@ -315,6 +317,27 @@ For detailed debugging information:
 export RUST_LOG=debug
 ridiculous --device-id "your_id" --user-idx "your_idx" --verbose
 ```
+
+## 📝 Important Notes
+
+### Device-Specific Encryption
+**Each book is encrypted with the device ID it was downloaded on.** If you have multiple RIDI devices:
+- Find all your devices at: https://account.ridibooks.com/api/user-devices/app
+- Use the `device_id` from the device where you downloaded the book
+- If books fail to decrypt, try credentials from a different device
+
+### Already-Decrypted Books
+The tool **automatically detects and skips** books that are already decrypted:
+- Checks if the book file is a valid readable EPUB/PDF
+- Only processes encrypted books that need decryption
+- Prevents "unpad errors" when accidentally trying to decrypt plaintext files
+
+### Cover Images
+All decrypted EPUBs **preserve the original cover images**:
+- Cover image is embedded in `OEBPS/Images/cover.jpg`
+- Properly referenced in EPUB metadata
+- Will display in all major EPUB readers (Apple Books, Calibre, etc.)
+- Note: macOS Finder doesn't show EPUB thumbnails by default (this is a macOS limitation)
 
 ## 🏗️ Building from Source
 

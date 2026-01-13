@@ -22,6 +22,7 @@ struct DecryptionProgress {
     successful: usize,
     failed: usize,
     is_complete: bool,
+    errors: Vec<(String, String)>, // (book_name, error_message)
 }
 
 impl Default for DecryptionProgress {
@@ -33,6 +34,7 @@ impl Default for DecryptionProgress {
             successful: 0,
             failed: 0,
             is_complete: false,
+            errors: Vec::new(),
         }
     }
 }
@@ -105,9 +107,19 @@ impl RidiculousApp {
                     self.error_message = "No books found in library.".to_string();
                     self.state = AppState::Setup;
                 } else {
-                    self.books = books;
-                    self.selected_books = vec![true; self.books.len()];
-                    self.state = AppState::Ready;
+                    // Filter out already-decrypted books (just like CLI does)
+                    let books_to_decrypt: Vec<BookInfo> = books.into_iter()
+                        .filter(|book| !book.is_already_decrypted(&config))
+                        .collect();
+
+                    if books_to_decrypt.is_empty() {
+                        self.error_message = "All books are already decrypted!".to_string();
+                        self.state = AppState::Setup;
+                    } else {
+                        self.books = books_to_decrypt;
+                        self.selected_books = vec![true; self.books.len()];
+                        self.state = AppState::Ready;
+                    }
                 }
             }
             Err(e) => {
@@ -142,6 +154,7 @@ impl RidiculousApp {
             progress.successful = 0;
             progress.failed = 0;
             progress.is_complete = false;
+            progress.errors.clear();
         }
 
         self.state = AppState::Decrypting;
@@ -178,7 +191,10 @@ impl RidiculousApp {
                     p.current = i + 1;
                     match result {
                         Ok(_) => p.successful += 1,
-                        Err(_) => p.failed += 1,
+                        Err(e) => {
+                            p.failed += 1;
+                            p.errors.push((book.get_display_name(), e.to_string()));
+                        }
                     }
                 }
 
@@ -208,7 +224,22 @@ async fn decrypt_single_book(
     use std::fs;
     use std::io::Read as _;
 
-    // Check if already decrypted
+    // Check if book file is already in plaintext (valid zip)
+    if !book.is_v11 && !book.book_filename.contains(".v") {
+        let book_path = book.get_book_file_path();
+        if book_path.exists() {
+            if let Ok(file) = fs::File::open(&book_path) {
+                if let Ok(zip) = zip::ZipArchive::new(file) {
+                    if zip.len() > 0 {
+                        // It's already a valid zip/epub, skip it
+                        return Ok(());
+                    }
+                }
+            }
+        }
+    }
+
+    // Check if already decrypted in output location
     let output_path = if let Some(dir) = output_dir {
         PathBuf::from(dir).join(book.get_output_filename())
     } else if let Some(library_path) = book.path.parent() {
@@ -230,7 +261,8 @@ async fn decrypt_single_book(
     dat_file.read_to_end(&mut dat_data)?;
 
     // Extract key from .dat file
-    let key = extract_key_from_dat(&dat_data, device_id)?;
+    let key = extract_key_from_dat(&dat_data, device_id)
+        .with_context(|| format!("Key extraction failed. Device ID: {}, .dat file size: {} bytes", device_id, dat_data.len()))?;
 
     // Decrypt book
     let decrypted_content = if book.is_v11 {
@@ -309,7 +341,7 @@ fn decrypt_v1_book(book: &BookInfo, key: &[u8; 16]) -> anyhow::Result<Vec<u8>> {
 
     let decrypted = cbc::Decryptor::<aes::Aes128>::new(key.into(), &iv.into())
         .decrypt_padded_mut::<aes::cipher::block_padding::Pkcs7>(&mut encrypted)
-        .map_err(|_| anyhow::anyhow!("Decryption failed"))?;
+        .map_err(|e| anyhow::anyhow!("Book decryption failed: {}. Wrong device_id for this book? Try credentials from the device where the book was downloaded.", e))?;
 
     Ok(decrypted.to_vec())
 }
@@ -373,7 +405,7 @@ fn decrypt_v11_file_content(encrypted_data: &[u8], key: &[u8; 16]) -> anyhow::Re
 
     let decrypted = cbc::Decryptor::<aes::Aes128>::new(key.into(), &iv.into())
         .decrypt_padded_mut::<aes::cipher::block_padding::Pkcs7>(&mut encrypted)
-        .map_err(|e| anyhow::anyhow!("V11 file decryption failed: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("V11 file decryption failed: {}. Wrong device_id for this book?", e))?;
 
     Ok(decrypted.to_vec())
 }
@@ -530,9 +562,9 @@ impl eframe::App for RidiculousApp {
                 }
 
                 AppState::Complete => {
-                    let (successful, failed) = {
+                    let (successful, failed, errors) = {
                         let p = self.progress.lock().unwrap();
-                        (p.successful, p.failed)
+                        (p.successful, p.failed, p.errors.clone())
                     };
 
                     ui.heading("✅ Decryption Complete!");
@@ -543,6 +575,27 @@ impl eframe::App for RidiculousApp {
                         ui.colored_label(egui::Color32::RED, format!("❌ Failed: {}", failed));
                     } else {
                         ui.label(format!("❌ Failed: {}", failed));
+                    }
+
+                    // Show error details if there are any failures
+                    if !errors.is_empty() {
+                        ui.add_space(20.0);
+                        ui.separator();
+                        ui.add_space(10.0);
+                        ui.colored_label(egui::Color32::RED, "Error Details:");
+                        ui.add_space(5.0);
+
+                        egui::ScrollArea::vertical()
+                            .max_height(200.0)
+                            .show(ui, |ui| {
+                                for (book_name, error_msg) in &errors {
+                                    ui.horizontal(|ui| {
+                                        ui.label("❌");
+                                        ui.label(format!("{}: {}", book_name, error_msg));
+                                    });
+                                    ui.add_space(5.0);
+                                }
+                            });
                     }
 
                     ui.add_space(20.0);
