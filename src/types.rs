@@ -139,7 +139,7 @@ impl BookInfo {
     
     pub fn get_output_filename(&self) -> OsString {
         let mut filename = OsString::from(&self.id);
-        filename.push(".");
+        filename.push("_decrypted.");
         filename.push(self.format.as_str());
         filename
     }
