@@ -261,8 +261,7 @@ async fn decrypt_single_book(
     dat_file.read_to_end(&mut dat_data)?;
 
     // Extract key from .dat file
-    let key = extract_key_from_dat(&dat_data, device_id)
-        .with_context(|| format!("Key extraction failed. Device ID: {}, .dat file size: {} bytes", device_id, dat_data.len()))?;
+    let key = extract_key_from_dat(&dat_data, device_id)?;
 
     // Decrypt book
     let decrypted_content = if book.is_v11 {
@@ -282,7 +281,11 @@ fn extract_key_from_dat(dat_data: &[u8], device_id: &str) -> anyhow::Result<[u8;
     use aes::cipher::{BlockDecryptMut, KeyIvInit};
 
     if dat_data.len() < 32 {
-        anyhow::bail!("Invalid .dat file: too small");
+        anyhow::bail!(
+            ".dat file corrupted (only {} bytes)\n\
+             Expected at least 32 bytes. Try re-downloading the book.",
+            dat_data.len()
+        );
     }
 
     let key_bytes = device_id.as_bytes();
@@ -297,14 +300,26 @@ fn extract_key_from_dat(dat_data: &[u8], device_id: &str) -> anyhow::Result<[u8;
 
     let decrypted = cbc::Decryptor::<aes::Aes128>::new(&key.into(), &iv.into())
         .decrypt_padded_mut::<aes::cipher::block_padding::Pkcs7>(&mut encrypted)
-        .map_err(|_| anyhow::anyhow!("Failed to decrypt .dat file"))?;
+        .map_err(|_| anyhow::anyhow!(
+            "Wrong device_id for this book\n\
+             \n\
+             This book was downloaded on a different device.\n\
+             Try device_id from: https://account.ridibooks.com/api/user-devices/app"
+        ))?;
 
     // Convert to UTF-8 string (the .dat contains text data)
     let plaintext_str = std::str::from_utf8(decrypted)
-        .map_err(|_| anyhow::anyhow!("Invalid UTF-8 in decrypted data"))?;
+        .map_err(|_| anyhow::anyhow!(
+            "Decrypted data contains invalid text\n\
+             The .dat file might be corrupted."
+        ))?;
 
     if plaintext_str.len() < 84 {
-        anyhow::bail!("Decrypted .dat data too short: {} chars", plaintext_str.len());
+        anyhow::bail!(
+            "Decrypted data too short ({} chars)\n\
+             The .dat file appears corrupted.",
+            plaintext_str.len()
+        );
     }
 
     // Extract key from characters 68-84 (not bytes!)
@@ -341,7 +356,13 @@ fn decrypt_v1_book(book: &BookInfo, key: &[u8; 16]) -> anyhow::Result<Vec<u8>> {
 
     let decrypted = cbc::Decryptor::<aes::Aes128>::new(key.into(), &iv.into())
         .decrypt_padded_mut::<aes::cipher::block_padding::Pkcs7>(&mut encrypted)
-        .map_err(|e| anyhow::anyhow!("Book decryption failed: {}. Wrong device_id for this book? Try credentials from the device where the book was downloaded.", e))?;
+        .map_err(|e| anyhow::anyhow!(
+            "Book decryption failed: {}\n\
+             \n\
+             Wrong device_id for this book?\n\
+             Try credentials from the device where you downloaded the book.",
+            e
+        ))?;
 
     Ok(decrypted.to_vec())
 }
@@ -405,7 +426,13 @@ fn decrypt_v11_file_content(encrypted_data: &[u8], key: &[u8; 16]) -> anyhow::Re
 
     let decrypted = cbc::Decryptor::<aes::Aes128>::new(key.into(), &iv.into())
         .decrypt_padded_mut::<aes::cipher::block_padding::Pkcs7>(&mut encrypted)
-        .map_err(|e| anyhow::anyhow!("V11 file decryption failed: {}. Wrong device_id for this book?", e))?;
+        .map_err(|e| anyhow::anyhow!(
+            "v11 file decryption failed: {}\n\
+             \n\
+             This v11 EPUB file couldn't be decrypted.\n\
+             Likely using wrong device_id for this book.",
+            e
+        ))?;
 
     Ok(decrypted.to_vec())
 }

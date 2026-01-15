@@ -384,8 +384,7 @@ async fn decrypt_book_with_original_logic(
     pb.set_position(20);
 
     // Get the decryption key using original logic
-    let key = decrypt_key(book, &config.device_id)
-        .with_context(|| format!("Failed to decrypt key for book: {}. Check if device_id is correct for this device.", book.get_display_name()))?;
+    let key = decrypt_key(book, &config.device_id)?;
 
     pb.set_message("Decrypting book content...");
     pb.set_position(50);
@@ -424,10 +423,18 @@ async fn decrypt_book_with_original_logic(
 fn decrypt_key(book_info: &BookInfo, device_id: &str) -> Result<[u8; 16]> {
     let data_file_path = book_info.get_data_file_path();
     let mut data_file = fs::read(&data_file_path)
-        .with_context(|| format!("Failed to read data file: {}", data_file_path.display()))?;
+        .with_context(|| format!(
+            "❌ Could not read .dat file: {}\n\
+             💡 Make sure the book is properly downloaded and the file exists.",
+            data_file_path.display()
+        ))?;
 
     if data_file.len() < 32 {
-        return Err(anyhow::anyhow!("Data file too small: {} bytes", data_file.len()));
+        return Err(anyhow::anyhow!(
+            "❌ .dat file is corrupted or invalid (only {} bytes)\n\
+             💡 Expected at least 32 bytes. Try re-downloading the book in RIDI app.",
+            data_file.len()
+        ));
     }
 
     let mut key = [0; 16];
@@ -440,13 +447,33 @@ fn decrypt_key(book_info: &BookInfo, device_id: &str) -> Result<[u8; 16]> {
 
     let plaintext = cbc::Decryptor::<aes::Aes128>::new(&key.into(), &iv.into())
         .decrypt_padded_mut::<aes::cipher::block_padding::Pkcs7>(&mut data_file[16..])
-        .map_err(|error| anyhow::anyhow!("Decryption failed: {}", error))?;
+        .map_err(|_| anyhow::anyhow!(
+            "❌ Failed to decrypt .dat file with provided device_id\n\
+             📋 Book ID: {}\n\
+             🔑 Device ID used: {}\n\
+             \n\
+             💡 Possible causes:\n\
+             1. Wrong device_id - this book was downloaded on a different device\n\
+             2. Check https://account.ridibooks.com/api/user-devices/app for all your devices\n\
+             3. Try the device_id from the device where you downloaded this book\n\
+             4. If you have multiple devices, try each device_id until one works",
+            book_info.id,
+            device_id
+        ))?;
 
     let plaintext_str = std::str::from_utf8(&plaintext)
-        .context("Invalid UTF-8 in decrypted data")?;
-    
+        .map_err(|_| anyhow::anyhow!(
+            "❌ Decrypted .dat data contains invalid text\n\
+             💡 This shouldn't happen - the .dat file might be corrupted.\n\
+             Try re-downloading the book in RIDI app."
+        ))?;
+
     if plaintext_str.len() < 84 {
-        return Err(anyhow::anyhow!("Decrypted data too short: {} chars", plaintext_str.len()));
+        return Err(anyhow::anyhow!(
+            "❌ Decrypted .dat data is too short ({} characters, expected 84+)\n\
+             💡 The .dat file appears corrupted. Try re-downloading the book.",
+            plaintext_str.len()
+        ));
     }
 
     let mut result = [0; 16];
@@ -462,10 +489,18 @@ fn decrypt_key(book_info: &BookInfo, device_id: &str) -> Result<[u8; 16]> {
 fn decrypt_book_content(book_info: &BookInfo, key: &[u8; 16]) -> Result<Vec<u8>> {
     let book_file_path = book_info.get_book_file_path();
     let mut book_file = fs::read(&book_file_path)
-        .with_context(|| format!("Failed to read book file: {}", book_file_path.display()))?;
+        .with_context(|| format!(
+            "❌ Could not read book file: {}\n\
+             💡 Make sure the book file exists and is accessible.",
+            book_file_path.display()
+        ))?;
 
     if book_file.len() < 16 {
-        return Err(anyhow::anyhow!("Book file too small: {} bytes", book_file.len()));
+        return Err(anyhow::anyhow!(
+            "❌ Book file is too small ({} bytes)\n\
+             💡 The book file appears corrupted. Try re-downloading it in RIDI app.",
+            book_file.len()
+        ));
     }
 
     let mut iv = [0; 16];
@@ -473,7 +508,24 @@ fn decrypt_book_content(book_info: &BookInfo, key: &[u8; 16]) -> Result<Vec<u8>>
 
     let decrypted = cbc::Decryptor::<aes::Aes128>::new(key.into(), &iv.into())
         .decrypt_padded_mut::<aes::cipher::block_padding::Pkcs7>(&mut book_file[16..])
-        .map_err(|error| anyhow::anyhow!("Book decryption failed: {}. This usually means wrong credentials or the book is encrypted with a different device_id", error))?;
+        .map_err(|error| anyhow::anyhow!(
+            "❌ Book decryption failed: {}\n\
+             📋 Book ID: {}\n\
+             📄 File: {}\n\
+             \n\
+             💡 This usually means:\n\
+             1. Wrong device_id - the book was downloaded on a different device\n\
+             2. The book key extraction succeeded but book decryption failed\n\
+             3. The book file might be corrupted\n\
+             \n\
+             🔧 Try:\n\
+             - Use device_id from the device where you downloaded this book\n\
+             - Check all your devices at: https://account.ridibooks.com/api/user-devices/app\n\
+             - Re-download the book in RIDI app if problem persists",
+            error,
+            book_info.id,
+            book_file_path.display()
+        ))?;
 
     Ok(decrypted.to_vec())
 }
@@ -481,7 +533,12 @@ fn decrypt_book_content(book_info: &BookInfo, key: &[u8; 16]) -> Result<Vec<u8>>
 // V11 format decryption - each file in ZIP has its own IV
 fn decrypt_v11_file_content(encrypted_data: &[u8], key: &[u8; 16]) -> Result<Vec<u8>> {
     if encrypted_data.len() < 16 {
-        return Err(anyhow::anyhow!("File too small for v11 decryption: {} bytes", encrypted_data.len()));
+        return Err(anyhow::anyhow!(
+            "❌ v11 file too small ({} bytes)\n\
+             💡 Files in v11 EPUB need at least 16 bytes for encryption.\n\
+             This file might be corrupted or unencrypted metadata.",
+            encrypted_data.len()
+        ));
     }
 
     // First 16 bytes are the IV
@@ -493,7 +550,12 @@ fn decrypt_v11_file_content(encrypted_data: &[u8], key: &[u8; 16]) -> Result<Vec
     // Decrypt
     let decrypted = cbc::Decryptor::<aes::Aes128>::new(key.into(), &iv.into())
         .decrypt_padded_mut::<aes::cipher::block_padding::Pkcs7>(&mut encrypted)
-        .map_err(|error| anyhow::anyhow!("V11 file decryption failed: {}", error))?;
+        .map_err(|error| anyhow::anyhow!(
+            "❌ v11 file decryption failed: {}\n\
+             💡 This v11 EPUB file couldn't be decrypted with the current key.\n\
+             Likely using wrong device_id for this book.",
+            error
+        ))?;
 
     Ok(decrypted.to_vec())
 }
