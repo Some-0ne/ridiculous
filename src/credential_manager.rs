@@ -13,7 +13,7 @@ impl CredentialManager {
     pub fn new() -> Self {
         let client = Client::builder()
             .timeout(Duration::from_secs(10))
-            .user_agent("ridiculous/0.3.0")
+            .user_agent("ridiculous/0.3.4")
             .build()
             .expect("Failed to create HTTP client");
 

@@ -27,7 +27,7 @@ use credential_manager::CredentialManager;
 #[derive(Parser, Debug)]
 #[command(name = "ridiculous")]
 #[command(about = "Enhanced RIDI book decryption tool")]
-#[command(version = "0.3.0")]
+#[command(version = "0.3.4")]
 struct Args {
     #[arg(short, long)]
     device_id: Option<String>,
@@ -222,7 +222,7 @@ async fn main() -> miette::Result<()> {
 fn print_welcome() {
     // Using println! instead of console::style since console might not be available
     println!("🚀 ═══════════════════════════════════════════════════════════════");
-    println!("   RIDICULOUS ENHANCED - Smart RIDI Books DRM Removal v0.3.0");
+    println!("   RIDICULOUS ENHANCED - Smart RIDI Books DRM Removal v0.3.4");
     println!("   ═══════════════════════════════════════════════════════════════");
     println!();
 }
