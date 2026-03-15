@@ -227,6 +227,14 @@ fn print_welcome() {
     println!();
 }
 
+fn mask_device_id(device_id: &str) -> String {
+    if device_id.len() <= 8 {
+        "xxxx".to_string()
+    } else {
+        format!("{}...{}", &device_id[..4], &device_id[device_id.len()-4..])
+    }
+}
+
 async fn process_books_batch(
     books: Vec<BookInfo>,
     config: &Config,
@@ -706,8 +714,8 @@ async fn test_all_devices(args: &Args) -> miette::Result<()> {
                             let key_slice = &plaintext_str[68..84];
                             println!("  Book key extracted: {}", key_slice);
                             println!("\n🎉 This is the CORRECT device_id! Use these credentials:");
-                            println!("  --device-id {}", device_id);
-                            println!("  --user-idx 6036783\n");
+                            println!("  --device-id {}", mask_device_id(device_id));
+                            println!("  --user-idx <your-user-idx>\n");
                             return Ok(());
                         } else {
                             println!("  ⚠️  Content too short for key extraction");
@@ -811,7 +819,7 @@ fn load_or_create_config(args: &Args) -> miette::Result<Config> {
     } else {
         Config::default()
     };
-    
+
     // Override with CLI args
     if let Some(device_id) = &args.device_id {
         config.device_id = device_id.clone();
@@ -827,15 +835,48 @@ fn load_or_create_config(args: &Args) -> miette::Result<Config> {
     }
     config.verbose = args.verbose;
     config.organize_output = args.organize;
-    
+
+    // Try to extract credentials from Sentry if not provided
+    if config.device_id.is_empty() || config.user_idx.is_empty() {
+        if args.verbose {
+            println!("🔍 Attempting to extract credentials from Ridibooks Sentry file...");
+        }
+        match CredentialManager::extract_credentials_from_sentry() {
+            Ok((device_id, user_idx)) => {
+                if config.device_id.is_empty() {
+                    println!("✅ Successfully extracted device_id from Ridibooks app");
+                    config.device_id = device_id;
+                }
+                if config.user_idx.is_empty() {
+                    println!("✅ Successfully extracted user_idx from Ridibooks app");
+                    config.user_idx = user_idx;
+                }
+            }
+            Err(e) => {
+                if args.verbose {
+                    println!("⚠️  Could not extract credentials from Sentry file: {}", e);
+                }
+            }
+        }
+    }
+
     // Validate required fields
     if config.device_id.is_empty() || config.user_idx.is_empty() {
         return Err(miette!(
-            "Missing credentials. Run with --device-id and --user-idx or use config file.\n\
-             Get credentials from: https://account.ridibooks.com/api/user-devices/app"
+            "❌ Missing credentials.\n\
+             \n\
+             💡 To get credentials automatically (Easiest!):\n\
+             1. Open the Ridibooks app\n\
+             2. Open and close any book in your library\n\
+             3. Run this tool again (both device_id and user_idx will be auto-detected)\n\
+             \n\
+             Or provide credentials manually:\n\
+             - Run with --device-id and --user-idx flags\n\
+             - Create a config file at ~/.ridiculous.toml\n\
+             - Get credentials from: https://account.ridibooks.com/api/user-devices/app"
         ));
     }
-    
+
     Ok(config)
 }
 

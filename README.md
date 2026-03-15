@@ -19,21 +19,21 @@ Before getting started, make sure you have:
 - **macOS**: Xcode Command Line Tools - `xcode-select --install`
 - **Linux**: Build essentials - `sudo apt install build-essential` (Ubuntu/Debian)
 
-## ✨ Enhanced Features
+## Features
 
-### 🔥 Capabilities
-- **🖥️ GUI Mode**: User-friendly graphical interface for non-technical users
-- **💻 CLI Mode**: Powerful command-line interface for advanced users
-- **📚 Batch Processing**: Process multiple books simultaneously with configurable parallelism
-- **📊 Progress Tracking**: Real-time progress bars and detailed status reporting
-- **🔄 Resume Support**: Continue from where you left off if processing is interrupted
-- **🔍 Smart Library Detection**: Automatically finds RIDI installations across all platforms
-- **📁 Custom Library Path**: Specify custom book library locations
-- **⚙️ Configuration Management**: Save credentials and preferences in config files
-- **🛠️ Advanced Diagnostics**: Built-in troubleshooting and system validation
-- **🔐 Credential Validation**: Verify your RIDI credentials before processing
-- **⚡ Async Architecture**: Fast, efficient processing with proper error handling
-- **🛡️ Graceful Shutdown**: Saves progress when interrupted (Ctrl+C)
+### Capabilities
+- **GUI Mode**: User-friendly graphical interface for non-technical users
+- **CLI Mode**: Powerful command-line interface for advanced users
+- **Batch Processing**: Process multiple books simultaneously with configurable parallelism
+- **Progress Tracking**: Real-time progress bars and detailed status reporting
+- **Resume Support**: Continue from where you left off if processing is interrupted
+- **Smart Library Detection**: Automatically finds RIDI installations across all platforms
+- **Custom Library Path**: Specify custom book library locations
+- **Configuration Management**: Save credentials and preferences in config files
+- **Advanced Diagnostics**: Built-in troubleshooting and system validation
+- **Credential Validation**: Verify your RIDI credentials before processing
+- **Async Architecture**: Fast, efficient processing with proper error handling
+- **Graceful Shutdown**: Saves progress when interrupted (Ctrl+C)
 
 ### 📖 Format Support
 - **EPUB** - Complete support with metadata preservation
@@ -131,9 +131,9 @@ cargo run --release --features gui -- --gui
 The GUI provides an intuitive workflow:
 
 1. **Setup Screen**
-   - Enter your Device ID (from RIDI credentials)
-   - Enter your User Index (from RIDI credentials)
-   - Optionally specify a custom Library Path (or leave empty for auto-detection)
+   - Click **"🔍 Auto-detect Credentials"** to automatically fill both Device ID and User Index
+   - Alternatively, enter credentials manually
+   - **Library Path**: Optionally specify custom path (or leave empty for auto-detection)
    - Click "🔍 Find Books" to scan your library
 
 2. **Book Selection**
@@ -164,6 +164,29 @@ The GUI provides an intuitive workflow:
 
 ### 2. Get Your RIDI Credentials
 
+#### Option A: Automatic Credential Extraction (Recommended - Zero Manual Input!)
+
+The easiest way is to let the tool automatically extract **both** your `device_id` AND `user_idx` from the Ridibooks app:
+
+1. **Install and open the Ridibooks app**
+2. **Open and close any book** in your library (this logs credentials to a local file)
+3. **Run the tool** - it will automatically detect both credentials:
+   ```bash
+   cargo run
+   ```
+
+The tool reads credentials from the Ridibooks Sentry file:
+- **macOS**: `~/Library/Application Support/Ridibooks/sentry/scope_v2.json`
+- **Windows**: `%APPDATA%\Ridibooks\sentry\scope_v2.json`
+
+**What's extracted automatically:**
+- ✅ `device_id` - From HTTP breadcrumb query parameters
+- ✅ `user_idx` - From the Sentry user ID field
+
+> **No manual credential entry needed!** Just open a book in Ridibooks and run the tool.
+
+#### Option B: Using the Credential Setup Script
+
 Run the interactive credential setup script:
 ```bash
 ./scripts/get_ridi_credentials.sh
@@ -180,11 +203,12 @@ chmod +x ./scripts/get_ridi_credentials.sh && ./scripts/get_ridi_credentials.sh
 
 This script will:
 - Open RIDI login page in your browser
-- Guide you to the device API endpoint  
+- Guide you to the device API endpoint
 - Help extract your `device_id` and `user_idx`
 - Optionally save credentials to config file
 
-**Manual Method:**
+#### Option C: Manual Method
+
 1. Go to [https://ridibooks.com/account/login](https://ridibooks.com/account/login) and log in
 2. Visit [https://account.ridibooks.com/api/user-devices/app](https://account.ridibooks.com/api/user-devices/app)
 3. Find the `device_id` and `user_idx` values in the JSON response

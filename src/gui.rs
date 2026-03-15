@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use crate::types::{Config, BookInfo};
 use crate::library_finder::LibraryFinder;
+use crate::credential_manager::CredentialManager;
 
 #[derive(Default, PartialEq)]
 enum AppState {
@@ -460,6 +461,21 @@ impl eframe::App for RidiculousApp {
                             .on_hover_text("Your RIDI user index number");
                     });
 
+                    ui.add_space(5.0);
+
+                    if ui.button("🔍 Auto-detect Credentials").on_hover_text("Extract both device_id and user_idx from Ridibooks app").clicked() {
+                        match CredentialManager::extract_credentials_from_sentry() {
+                            Ok((device_id, user_idx)) => {
+                                self.device_id = device_id;
+                                self.user_idx = user_idx;
+                                self.error_message = "✅ Credentials extracted successfully!".to_string();
+                            }
+                            Err(e) => {
+                                self.error_message = format!("Failed to auto-detect credentials:\n{}", e);
+                            }
+                        }
+                    }
+
                     ui.add_space(10.0);
 
                     ui.horizontal(|ui| {
@@ -495,9 +511,8 @@ impl eframe::App for RidiculousApp {
                     ui.add_space(10.0);
 
                     ui.label("📝 How to get your credentials:");
-                    ui.label("1. Go to https://ridibooks.com and log in");
-                    ui.label("2. Visit https://account.ridibooks.com/api/user-devices/app");
-                    ui.label("3. Copy your device_id and user_idx from the JSON response");
+                    ui.label("• Option 1 (Easiest): Click 'Auto-detect Credentials' after opening a book in Ridibooks app");
+                    ui.label("• Option 2 (Manual): Visit https://account.ridibooks.com/api/user-devices/app");
                 }
 
                 AppState::Discovering => {
