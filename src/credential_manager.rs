@@ -275,6 +275,13 @@ public class WinCred {
         Ok(key_string)
     }
 
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    fn get_keychain_password() -> Result<String> {
+        Err(anyhow::anyhow!(
+            "Keychain access is only supported on macOS and Windows."
+        ))
+    }
+
     /// Validates the Settings file format
     fn validate_settings_file(data: &[u8]) -> Result<()> {
         if data.len() < 256 {
