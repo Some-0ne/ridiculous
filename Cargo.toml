@@ -1,6 +1,6 @@
 [package]
 name = "ridiculous"
-version = "0.3.4"
+version = "0.3.5"
 edition = "2021"
 authors = ["Floorswww"]
 description = "Enhanced RIDI book decryption tool with batch processing and GUI support"
@@ -33,6 +33,9 @@ walkdir = "2.0"
 # Cryptography (original RIDI decryption)
 aes = "0.8"
 cbc = "0.1"
+ecb = "0.1"
+base64 = "0.22"
+sha1 = "0.10"
 
 # ZIP handling for v11 format
 zip = { version = "0.6", default-features = false, features = ["deflate"] }

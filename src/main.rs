@@ -27,7 +27,7 @@ use credential_manager::CredentialManager;
 #[derive(Parser, Debug)]
 #[command(name = "ridiculous")]
 #[command(about = "Enhanced RIDI book decryption tool")]
-#[command(version = "0.3.4")]
+#[command(version = "0.3.5")]
 struct Args {
     #[arg(short, long)]
     device_id: Option<String>,
@@ -41,9 +41,6 @@ struct Args {
     #[arg(long)]
     diagnose: bool,
 
-    #[arg(long)]
-    test_devices: bool,
-    
     #[arg(long)]
     validate_only: bool,
     
@@ -119,10 +116,6 @@ async fn main() -> miette::Result<()> {
     }
 
     // Handle special modes first
-    if args.test_devices {
-        return test_all_devices(&args).await;
-    }
-
     if args.diagnose {
         return run_diagnostics(&args).await;
     }
@@ -222,7 +215,7 @@ async fn main() -> miette::Result<()> {
 fn print_welcome() {
     // Using println! instead of console::style since console might not be available
     println!("🚀 ═══════════════════════════════════════════════════════════════");
-    println!("   RIDICULOUS ENHANCED - Smart RIDI Books DRM Removal v0.3.4");
+    println!("   RIDICULOUS ENHANCED - Smart RIDI Books DRM Removal v0.3.5");
     println!("   ═══════════════════════════════════════════════════════════════");
     println!();
 }
@@ -647,16 +640,12 @@ async fn test_all_devices(args: &Args) -> miette::Result<()> {
     println!("🧪 Testing all device IDs with your books...\n");
 
     let library_path = args.library_path.clone()
-        .or_else(|| Some(PathBuf::from("/Users/jannattayef/Documents/ridi")))
-        .ok_or_else(|| miette!("No library path specified"))?;
+        .ok_or_else(|| miette!("No library path specified. Use --library-path to specify your RIDI library folder."))?;
 
     println!("📁 Library path: {}\n", library_path.display());
 
-    let device_ids = vec![
-        ("PC #1 (last modified Oct 2025)", "e3bb0a0a-8c71-4800-ac22-9bc817b79874"),
-        ("iPhone 16 Pro Max", "B89CE3E6-6BDA-4093-B8A3-E66071579230"),
-        ("PC #2 (created Aug 2025)", "271c0909-8590-4654-9cc2-708d2c4102b5"),
-    ];
+    // Device IDs to test — pass via --device-id (repeatable) or supply manually
+    let device_ids: Vec<(&str, &str)> = vec![];
 
     // Find first book to test
     let entries = fs::read_dir(&library_path).into_diagnostic()?;
@@ -836,25 +825,47 @@ fn load_or_create_config(args: &Args) -> miette::Result<Config> {
     config.verbose = args.verbose;
     config.organize_output = args.organize;
 
-    // Try to extract credentials from Sentry if not provided
+    // Try to extract credentials if not provided
     if config.device_id.is_empty() || config.user_idx.is_empty() {
         if args.verbose {
-            println!("🔍 Attempting to extract credentials from Ridibooks Sentry file...");
+            println!("🔍 Attempting to extract credentials from Ridibooks app...");
         }
-        match CredentialManager::extract_credentials_from_sentry() {
-            Ok((device_id, user_idx)) => {
+
+        // First, try the permanent method (encrypted Settings + Sentry)
+        match CredentialManager::extract_credentials_permanent() {
+            Ok(creds) => {
                 if config.device_id.is_empty() {
-                    println!("✅ Successfully extracted device_id from Ridibooks app");
-                    config.device_id = device_id;
+                    println!("✅ Extracted device_id from encrypted Settings file");
+                    config.device_id = creds.device_id;
                 }
                 if config.user_idx.is_empty() {
-                    println!("✅ Successfully extracted user_idx from Ridibooks app");
-                    config.user_idx = user_idx;
+                    println!("✅ Extracted user_idx from Sentry file");
+                    config.user_idx = creds.user_idx.to_string();
                 }
             }
             Err(e) => {
                 if args.verbose {
-                    println!("⚠️  Could not extract credentials from Sentry file: {}", e);
+                    println!("⚠️  Permanent extraction failed: {}", e);
+                    println!("🔄 Trying fallback method (Sentry breadcrumbs)...");
+                }
+
+                // Fallback to Sentry breadcrumb method (requires opening a book)
+                match CredentialManager::extract_credentials_from_sentry() {
+                    Ok((device_id, user_idx)) => {
+                        if config.device_id.is_empty() {
+                            println!("✅ Extracted device_id from Sentry breadcrumbs");
+                            config.device_id = device_id;
+                        }
+                        if config.user_idx.is_empty() {
+                            println!("✅ Extracted user_idx from Sentry file");
+                            config.user_idx = user_idx;
+                        }
+                    }
+                    Err(e2) => {
+                        if args.verbose {
+                            println!("⚠️  Fallback extraction also failed: {}", e2);
+                        }
+                    }
                 }
             }
         }

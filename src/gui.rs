@@ -464,14 +464,32 @@ impl eframe::App for RidiculousApp {
                     ui.add_space(5.0);
 
                     if ui.button("🔍 Auto-detect Credentials").on_hover_text("Extract both device_id and user_idx from Ridibooks app").clicked() {
-                        match CredentialManager::extract_credentials_from_sentry() {
-                            Ok((device_id, user_idx)) => {
-                                self.device_id = device_id;
-                                self.user_idx = user_idx;
-                                self.error_message = "✅ Credentials extracted successfully!".to_string();
+                        // Try permanent method first
+                        match CredentialManager::extract_credentials_permanent() {
+                            Ok(creds) => {
+                                self.device_id = creds.device_id;
+                                self.user_idx = creds.user_idx.to_string();
+                                self.error_message = "✅ Credentials extracted from encrypted Settings!".to_string();
                             }
                             Err(e) => {
-                                self.error_message = format!("Failed to auto-detect credentials:\n{}", e);
+                                // Fallback to Sentry breadcrumb method
+                                match CredentialManager::extract_credentials_from_sentry() {
+                                    Ok((device_id, user_idx)) => {
+                                        self.device_id = device_id;
+                                        self.user_idx = user_idx;
+                                        self.error_message = "✅ Credentials extracted from Sentry breadcrumbs!".to_string();
+                                    }
+                                    Err(e2) => {
+                                        self.error_message = format!(
+                                            "Failed to auto-detect credentials:\n\n\
+                                             Primary method: {}\n\n\
+                                             Fallback method: {}\n\n\
+                                             💡 Make sure you've logged into Ridibooks at least once,\n\
+                                             or try opening a book in the app.",
+                                            e, e2
+                                        );
+                                    }
+                                }
                             }
                         }
                     }
